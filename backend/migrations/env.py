@@ -42,10 +42,18 @@ if config.config_file_name is not None:
 
 # Override the sqlalchemy.url with the value from our settings
 settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.database_url)
+config.set_main_option("sqlalchemy.url", settings.database_url_migrations.replace("%", "%%"))
 
 # The metadata object containing all model definitions
 target_metadata = Base.metadata
+
+def include_object(object, name, type_, reflected, compare_to):
+    if type_ == "table" and name == "alembic_version":
+        return False
+    # Ignore pgvector objects or extension objects if needed
+    if type_ == "table" and object.schema != "public" and object.schema is not None:
+        return False
+    return True
 
 
 def run_migrations_offline() -> None:
@@ -61,14 +69,18 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        # Compare column types for more accurate autogenerate
         compare_type=True,
         compare_server_default=True,
-        # Include all schemas
         include_schemas=True,
+        include_object=include_object,
+        include_name=lambda name, type_, parent_names: True if type_ != "schema" or name == "public" else False,
+        version_table="alembic_version",
+        transaction_per_migration=True,
     )
 
     with context.begin_transaction():
+        context.execute("SET lock_timeout TO '10s'")
+        context.execute("SET statement_timeout TO '60s'")
         context.run_migrations()
 
 
@@ -80,8 +92,14 @@ def do_run_migrations(connection: Connection) -> None:
         compare_type=True,
         compare_server_default=True,
         include_schemas=True,
+        include_object=include_object,
+        include_name=lambda name, type_, parent_names: True if type_ != "schema" or name == "public" else False,
+        version_table="alembic_version",
+        transaction_per_migration=True,
     )
     with context.begin_transaction():
+        context.execute("SET lock_timeout TO '10s'")
+        context.execute("SET statement_timeout TO '60s'")
         context.run_migrations()
 
 

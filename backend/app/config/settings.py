@@ -11,7 +11,7 @@ from __future__ import annotations
 from enum import StrEnum
 from functools import lru_cache
 
-from pydantic import AnyHttpUrl, Field, SecretStr, field_validator, model_validator
+from pydantic import AnyHttpUrl, Field, SecretStr, field_validator, model_validator, AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -36,7 +36,6 @@ class ModelProvider(StrEnum):
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     GOOGLE = "google"
-    GEMINI = "gemini"
     AZURE_OPENAI = "azure_openai"
     OLLAMA = "ollama"
     MOCK = "mock"
@@ -116,7 +115,16 @@ class Settings(BaseSettings):
 
     @property
     def database_url(self) -> str:
-        """Async-compatible PostgreSQL DSN for SQLAlchemy."""
+        """Async-compatible PostgreSQL DSN for SQLAlchemy (app role)."""
+        pwd = self.aura_db_app_password
+        return (
+            f"postgresql+asyncpg://{self.aura_db_app_user}:{pwd}"
+            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        )
+
+    @property
+    def database_url_migrations(self) -> str:
+        """Async PostgreSQL DSN for Alembic migrations (owner role)."""
         pwd = self.postgres_password.get_secret_value()
         return (
             f"postgresql+asyncpg://{self.postgres_user}:{pwd}"
@@ -125,7 +133,7 @@ class Settings(BaseSettings):
 
     @property
     def database_url_sync(self) -> str:
-        """Synchronous PostgreSQL DSN for Alembic migrations."""
+        """Synchronous PostgreSQL DSN for owner role."""
         pwd = self.postgres_password.get_secret_value()
         return (
             f"postgresql+psycopg2://{self.postgres_user}:{pwd}"
@@ -151,10 +159,15 @@ class Settings(BaseSettings):
     # AI — LLM
     # =========================================================================
     primary_llm_provider: ModelProvider = Field(
-        default=ModelProvider.OPENAI,
+        default=ModelProvider.GOOGLE,
+        validation_alias=AliasChoices("PRIMARY_LLM_PROVIDER", "MODEL_PROVIDER"),
         description="LLM provider to use.",
     )
-    primary_llm_model: str = Field(default="gpt-4o", description="Model identifier.")
+    primary_llm_model: str = Field(
+        default="gemini-2.5-flash",
+        validation_alias=AliasChoices("PRIMARY_LLM_MODEL", "MODEL_NAME"),
+        description="Model identifier.",
+    )
     fallback_llm_provider: ModelProvider | None = Field(
         default=None, description="Optional fallback provider"
     )
@@ -213,6 +226,25 @@ class Settings(BaseSettings):
     # =========================================================================
     # Security / JWT
     # =========================================================================
+
+    # =========================================================================
+    # Phase 1: New Settings
+    # =========================================================================
+    aura_run_migrations_on_startup: bool = Field(default=True)
+    mcp_server_url: AnyHttpUrl | None = Field(default=None)
+    mcp_enabled: bool = Field(default=False)
+    aura_rls_enabled: bool = Field(default=False)
+    aura_db_app_user: str = Field(default="aura_app")
+    aura_db_app_password: str = Field(default="aura_app_password")
+    aura_sentry_dsn: AnyHttpUrl | None = Field(default=None)
+    aura_daily_org_budget_usd: float = Field(default=10.0)
+    aura_max_request_bytes: int = Field(default=10485760)  # 10MB
+    aura_trusted_hosts: list[str] = Field(default=["*"])
+    aura_jwt_iss: str = Field(default="aura")
+    aura_jwt_aud: str = Field(default="aura")
+    aura_demo_password: str = Field(default="demo1234")
+    aura_agent_run_heartbeat_seconds: int = Field(default=30)
+
     aura_jwt_algorithm: str = Field(default="HS256")
     aura_jwt_access_token_expire_minutes: int = Field(default=60, ge=1)
     aura_jwt_refresh_token_expire_days: int = Field(default=7, ge=1)
@@ -273,16 +305,53 @@ class Settings(BaseSettings):
         return upper
 
     @model_validator(mode="after")
+    def validate_embeddings(self) -> Settings:
+        """Validate embedding provider and models."""
+        # Simple validation: if we're using OpenAI, we need an API key
+        if self.embedding_provider == EmbeddingProvider.OPENAI and not self.openai_api_key:
+            raise ValueError("OPENAI_API_KEY required for OpenAI embeddings")
+        if self.embedding_provider == EmbeddingProvider.GOOGLE and not self.google_ai_api_key:
+            raise ValueError("GOOGLE_AI_API_KEY required for Google embeddings")
+        return self
+
+    @model_validator(mode="after")
     def validate_production_settings(self) -> Settings:
         """Enforce stronger validation in production environments."""
-        if self.aura_env == Environment.PRODUCTION:
+        if self.aura_env in (Environment.PRODUCTION, Environment.STAGING):
+            # Check secret key
             secret_key = self.aura_secret_key.get_secret_value()
-            if secret_key == "dev-secret-key-replace-in-production":
-                raise ValueError("AURA_SECRET_KEY must be set in production.")
-            if len(secret_key) < 32:
-                raise ValueError("AURA_SECRET_KEY must be at least 32 characters in production.")
+            if secret_key == "dev-secret-key-replace-in-production" or len(secret_key) < 32:
+                raise ValueError("AURA_SECRET_KEY must be a strong key in production/staging.")
+            
+            # Check internal API key
+            internal_key = self.aura_internal_api_key.get_secret_value()
+            if internal_key == "dev-internal-key-replace-in-production":
+                raise ValueError("AURA_INTERNAL_API_KEY must be set in production.")
+            if internal_key == secret_key:
+                raise ValueError("AURA_INTERNAL_API_KEY and AURA_SECRET_KEY must differ.")
+            
+            # DB/Redis passwords
+            if len(self.postgres_password.get_secret_value()) < 8:
+                raise ValueError("postgres_password is too weak for production.")
+            if not self.redis_password.get_secret_value():
+                raise ValueError("redis_password cannot be empty in production.")
+            
+            # Security flags
             if self.aura_debug:
                 raise ValueError("AURA_DEBUG must be false in production.")
+            if "*" in self.aura_trusted_hosts or "localhost" in self.aura_trusted_hosts:
+                raise ValueError("AURA_TRUSTED_HOSTS must not contain wildcards or localhost in prod.")
+            if not str(self.aura_api_base_url).startswith("https"):
+                raise ValueError("aura_api_base_url must use https in production.")
+            if self.aura_log_format != LogFormat.JSON:
+                raise ValueError("aura_log_format must be JSON in production.")
+            
+            # Primary provider check
+            if self.primary_llm_provider == ModelProvider.GOOGLE and not self.google_ai_api_key:
+                raise ValueError("Google AI API Key required.")
+            if self.primary_llm_provider == ModelProvider.OPENAI and not self.openai_api_key:
+                raise ValueError("OpenAI API Key required.")
+            
         return self
 
     @property

@@ -13,17 +13,44 @@ Architecture:
 
 from __future__ import annotations
 
+import asyncio
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import TYPE_CHECKING
 
+import alembic.command
+import alembic.config
+import sqlalchemy as sa
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import ORJSONResponse
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import JSONResponse, ORJSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
 
 from app.config.settings import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.database.base import close_database, initialize_database
-from app.observability import RequestIDMiddleware, configure_logging, get_logger
+from app.observability import (
+    RequestIDMiddleware,
+    RequestMetricsMiddleware,
+    configure_logging,
+    get_logger,
+)
+
+
+def upgrade_with_lock(cfg: alembic.config.Config) -> None:
+    settings = get_settings()
+    eng = sa.create_engine(settings.database_url_sync)
+    with eng.connect() as conn:
+        conn.execute(sa.text("SELECT pg_advisory_lock(727274)"))
+        try:
+            alembic.command.upgrade(cfg, "head")
+        finally:
+            conn.execute(sa.text("SELECT pg_advisory_unlock(727274)"))
+            conn.commit()
+
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -31,43 +58,33 @@ if TYPE_CHECKING:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """
-    Application lifespan manager.
-
-    Handles startup and shutdown of:
-    - Logging
-    - Database connection pool
-    - (Future phases: Redis, background workers, ML model warmup)
-    """
-    # ---- Startup ---------------------------------------------------------
     settings = get_settings()
-
-    # Configure logging first so all subsequent startup logs are structured
     configure_logging()
     logger = get_logger(__name__)
 
-    logger.info(
-        "aura_starting",
-        environment=settings.aura_env.value,
-        debug=settings.aura_debug,
-        version="0.1.0",
-    )
+    logger.info("aura_starting", environment=settings.aura_env.value, debug=settings.aura_debug)
 
-    # Run migrations in a worker thread because Alembic's async
-    # migration environment manages its own event loop.
-    import asyncio
-
-    import alembic.command
-    import alembic.config
-
-    logger.info("Running database migrations...")
-    alembic_cfg = alembic.config.Config("alembic.ini")
-    await asyncio.to_thread(alembic.command.upgrade, alembic_cfg, "head")
+    if settings.aura_run_migrations_on_startup:
+        logger.info("Running database migrations...")
+        ini_path = Path(__file__).resolve().parent.parent.parent / "alembic.ini"
+        alembic_cfg = alembic.config.Config(str(ini_path))
+        alembic_cfg.set_main_option(
+            "script_location", str(Path(__file__).resolve().parent.parent.parent / "migrations")
+        )
+        await asyncio.to_thread(upgrade_with_lock, alembic_cfg)
 
     await initialize_database()
 
-    # Recovery: Mark stuck agent runs as FAILED
-    import sqlalchemy as sa
+    from app.security.rate_limit import get_redis_client
+
+    redis = await get_redis_client()
+    try:
+        await redis.ping()
+        logger.info("redis_connected")
+    except Exception as e:
+        logger.warning(f"redis_connection_failed: {e}")
+
+    from datetime import UTC, datetime, timedelta
 
     from app.database.base import get_session_factory
     from app.database.models import AgentRun, AgentRunStatus
@@ -75,40 +92,61 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         SessionFactory = get_session_factory()
         async with SessionFactory() as db:
+            cutoff = datetime.now(UTC) - timedelta(
+                seconds=settings.aura_agent_run_heartbeat_seconds * 3
+            )
             await db.execute(
                 sa.update(AgentRun)
-                .where(AgentRun.status.in_([AgentRunStatus.PENDING, AgentRunStatus.RUNNING]))
+                .where(
+                    AgentRun.status.in_([AgentRunStatus.PENDING, AgentRunStatus.RUNNING]),
+                    AgentRun.updated_at < cutoff,
+                )
                 .values(
                     status=AgentRunStatus.FAILED,
-                    error_message="Server crashed during execution",
-                    completed_at=sa.func.now(),
+                    error_message="Worker lease expired/crashed",
+                    updated_at=datetime.now(UTC),
                 )
             )
             await db.commit()
-            logger.info("Recovered stuck agent runs.")
-    except Exception as exc:
-        logger.warning("Failed to recover stuck agent runs.", error=str(exc))
+            logger.info("stuck_run_recovery_complete")
+    except Exception as e:
+        logger.error("stuck_run_recovery_failed", error=str(e))
 
-    # Check Redis connectivity
-    import redis.asyncio as aioredis
+    from app.tools.registry import ToolRegistry
 
-    try:
-        redis_client = aioredis.from_url(settings.redis_url)
-        await redis_client.ping()  # type: ignore[misc]
-        await redis_client.aclose()
-    except Exception as exc:
-        logger.error("Redis connection failed.", error=str(exc))
-        raise RuntimeError(f"Failed to connect to Redis: {exc}") from exc
+    registry = ToolRegistry()
+    app.state.tool_registry = registry
 
-    logger.info("aura_ready", api_base_url=str(settings.aura_api_base_url))
-
-    # ---- Hand control to the application --------------------------------
     yield
 
-    # ---- Shutdown --------------------------------------------------------
     logger.info("aura_shutting_down")
+    grace = os.getenv("AURA_SHUTDOWN_GRACE_SECONDS", "5")
+    logger.info(f"waiting {grace}s for in-flight requests")
+    await asyncio.sleep(float(grace))
     await close_database()
-    logger.info("aura_stopped")
+    logger.info("aura_shutdown_complete")
+
+
+class MaxSizeMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, max_bytes: int):
+        super().__init__(app)
+        self.max_bytes = max_bytes
+
+    async def dispatch(self, request: Request, call_next):
+        content_length = request.headers.get("content-length")
+        if content_length and int(content_length) > self.max_bytes:
+            return JSONResponse({"detail": "Request too large"}, status_code=413)
+        return await call_next(request)
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return response
 
 
 def create_app() -> FastAPI:
@@ -148,24 +186,67 @@ def create_app() -> FastAPI:
 
     # ---- Middleware (order matters: last added = outermost wrapper) ------
 
-    # CORS — must be before RequestID so preflight requests get correct headers
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.aura_cors_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-        expose_headers=["X-Request-ID", "X-Correlation-ID"],
-    )
-
-    # Request ID — outermost so all logs include the request ID
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.aura_trusted_hosts)
+    app.add_middleware(MaxSizeMiddleware, max_bytes=settings.aura_max_request_bytes)
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(RequestMetricsMiddleware)
     app.add_middleware(RequestIDMiddleware)
+
+    if settings.is_production:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["https://your-production-domain.com"],
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+            expose_headers=["X-Request-ID", "X-Correlation-ID"],
+        )
+    else:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+            expose_headers=["X-Request-ID", "X-Correlation-ID"],
+        )
 
     # ---- Exception Handlers ---------------------------------------------
     register_exception_handlers(app)
 
     # ---- Routers --------------------------------------------------------
     from app.api.v1.router import api_v1_router
+
+    @app.get("/ready", tags=["health"])
+    async def readiness_check():
+        """Detailed readiness probe (DB, Redis, Migrations)."""
+        settings = get_settings()
+        import sqlalchemy as sa
+        from fastapi import HTTPException
+
+        from app.database.base import get_session_factory
+        from app.security.rate_limit import get_redis_client
+
+        status = {"db": "ok", "redis": "ok"}
+        ready = True
+        try:
+            SessionFactory = get_session_factory()
+            async with SessionFactory() as db:
+                await db.execute(sa.text("SELECT 1"))
+        except Exception:
+            status["db"] = "failed"
+            ready = False
+
+        try:
+            redis = await get_redis_client()
+            await redis.ping()
+        except Exception:
+            status["redis"] = "failed"
+            ready = False
+
+        if not ready:
+            raise HTTPException(status_code=503, detail=status)
+        return status
 
     app.include_router(api_v1_router)
 

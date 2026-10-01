@@ -23,7 +23,13 @@ WORKDIR /build
 # Copy dependency manifests first (layer caching)
 COPY pyproject.toml .
 
-# Install all dependencies (including dev extras for development stage)
+# Install ONLY production dependencies
+RUN uv pip install --system --no-cache "."
+
+# -----------------------------------------------------------------------------
+# Stage 1.5: Dev dependency builder
+# -----------------------------------------------------------------------------
+FROM builder AS dev-builder
 RUN uv pip install --system --no-cache ".[dev]"
 
 # -----------------------------------------------------------------------------
@@ -37,9 +43,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy installed packages from builder
-COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
+# Copy installed packages from dev-builder
+COPY --from=dev-builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=dev-builder /usr/local/bin /usr/local/bin
 
 WORKDIR /app
 
@@ -74,7 +80,7 @@ USER aura
 
 # Health check — mirrors docker-compose.yml
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:8000/ready || exit 1
 
 EXPOSE 8000
 
