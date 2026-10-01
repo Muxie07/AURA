@@ -123,6 +123,42 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class RequestMetricsMiddleware(BaseHTTPMiddleware):
+    """
+    Lightweight metrics middleware.
+
+    Tracks per-request latency and status codes. Pushes aggregated counters
+    to a structlog metric event so they can be scraped by any log aggregator.
+    No external dependencies — metrics are emitted as structured log events.
+    """
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        start = time.perf_counter()
+        try:
+            response = await call_next(request)
+        except Exception:
+            logger.error(
+                "unhandled_exception",
+                path=request.url.path,
+                method=request.method,
+            )
+            raise
+        elapsed_ms = round((time.perf_counter() - start) * 1000, 2)
+        # Emit a structured metrics event (picked up by log aggregators)
+        logger.info(
+            "request_metric",
+            path=request.url.path,
+            method=request.method,
+            status_code=response.status_code,
+            duration_ms=elapsed_ms,
+        )
+        return response
+
+
 def _sanitize_request_id(value: str) -> str:
     """
     Accept a client-provided request ID if it looks like a valid UUID or

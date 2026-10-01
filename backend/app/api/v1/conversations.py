@@ -48,7 +48,7 @@ async def create_conversation(
     """
     conversation = Conversation(
         organization_id=current_user.organization_id,
-        user_id=current_user.id,
+        user_id=current_user.user_id,
         title=body.title,
         status=ConversationStatus.ACTIVE,
         metadata_={},

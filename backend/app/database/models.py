@@ -78,6 +78,37 @@ class AgentRunStatus(StrEnum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+class UserRole(StrEnum):
+    """RBAC Role for a user."""
+    OWNER = "owner"
+    ADMIN = "admin"
+    MEMBER = "member"
+    VIEWER = "viewer"
+
+class APIKey(Base):
+    """Service-to-service API keys for an organization."""
+    __tablename__ = "api_keys"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        _UUID_TYPE,
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        _UUID_TYPE,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    key_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+    )
+
     TIMED_OUT = "timed_out"
     AWAITING_APPROVAL = "awaiting_approval"
     CANCELLED = "cancelled"
@@ -230,12 +261,18 @@ class User(Base):
         doc="BCrypt hash. Null if using SSO.",
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    is_superuser: Mapped[bool] = mapped_column(
-        Boolean,
-        default=False,
+    role: Mapped[UserRole] = mapped_column(
+        SAEnum(
+            UserRole,
+            name="user_role_enum",
+            native_enum=False,
+            values_callable=lambda x: [e.value for e in x]
+        ),
+        default=UserRole.MEMBER,
         nullable=False,
-        doc="Platform-level admin (not org-level).",
+        server_default="member"
     )
+
     metadata_: Mapped[dict[str, Any]] = mapped_column(
         "metadata",
         _JSON_TYPE,

@@ -41,15 +41,8 @@ from app.observability import (
 
 
 def upgrade_with_lock(cfg: alembic.config.Config) -> None:
-    settings = get_settings()
-    eng = sa.create_engine(settings.database_url_sync)
-    with eng.connect() as conn:
-        conn.execute(sa.text("SELECT pg_advisory_lock(727274)"))
-        try:
-            alembic.command.upgrade(cfg, "head")
-        finally:
-            conn.execute(sa.text("SELECT pg_advisory_unlock(727274)"))
-            conn.commit()
+    """Run Alembic upgrade in a worker thread; advisory lock lives in env.py."""
+    alembic.command.upgrade(cfg, "head")
 
 
 if TYPE_CHECKING:
@@ -66,11 +59,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     if settings.aura_run_migrations_on_startup:
         logger.info("Running database migrations...")
-        ini_path = Path(__file__).resolve().parent.parent.parent / "alembic.ini"
+        backend_root = Path(__file__).resolve().parent.parent
+        ini_path = backend_root / "alembic.ini"
         alembic_cfg = alembic.config.Config(str(ini_path))
-        alembic_cfg.set_main_option(
-            "script_location", str(Path(__file__).resolve().parent.parent.parent / "migrations")
-        )
+        alembic_cfg.set_main_option("script_location", str(backend_root / "migrations"))
         await asyncio.to_thread(upgrade_with_lock, alembic_cfg)
 
     await initialize_database()

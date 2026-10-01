@@ -174,7 +174,7 @@ async def create_agent_run(
 
         try:
             redis_client = aioredis.from_url(settings.redis_url, socket_timeout=2.0)
-            cache_key = f"idemp:agent_run:{current_user.id}:{idempotency_key}"
+            cache_key = f"idemp:agent_run:{current_user.user_id}:{idempotency_key}"
             cached = await redis_client.get(cache_key)
             if cached:
                 run_id = uuid.UUID(cached.decode("utf-8"))
@@ -199,7 +199,7 @@ async def create_agent_run(
 
     # Verify conversation
     org_id = current_user.organization_id
-    user_id = current_user.id
+    user_id = current_user.user_id
 
     conv = await db.scalar(
         sa.select(Conversation).where(

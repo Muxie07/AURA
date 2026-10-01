@@ -11,7 +11,7 @@ from __future__ import annotations
 from enum import StrEnum
 from functools import lru_cache
 
-from pydantic import AnyHttpUrl, Field, SecretStr, field_validator, model_validator, AliasChoices
+from pydantic import AliasChoices, AnyHttpUrl, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -115,10 +115,19 @@ class Settings(BaseSettings):
 
     @property
     def database_url(self) -> str:
-        """Async-compatible PostgreSQL DSN for SQLAlchemy (app role)."""
-        pwd = self.aura_db_app_password
+        """Async PostgreSQL DSN for SQLAlchemy.
+
+        Uses the dedicated app role if explicitly configured,
+        otherwise falls back to the owner credentials so a plain .env works.
+        """
+        user = self.aura_db_app_user if self.aura_db_app_user != "aura_app" else self.postgres_user
+        pwd = (
+            self.aura_db_app_password
+            if self.aura_db_app_user != "aura_app"
+            else self.postgres_password.get_secret_value()
+        )
         return (
-            f"postgresql+asyncpg://{self.aura_db_app_user}:{pwd}"
+            f"postgresql+asyncpg://{user}:{pwd}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
 
@@ -322,20 +331,20 @@ class Settings(BaseSettings):
             secret_key = self.aura_secret_key.get_secret_value()
             if secret_key == "dev-secret-key-replace-in-production" or len(secret_key) < 32:
                 raise ValueError("AURA_SECRET_KEY must be a strong key in production/staging.")
-            
+
             # Check internal API key
             internal_key = self.aura_internal_api_key.get_secret_value()
             if internal_key == "dev-internal-key-replace-in-production":
                 raise ValueError("AURA_INTERNAL_API_KEY must be set in production.")
             if internal_key == secret_key:
                 raise ValueError("AURA_INTERNAL_API_KEY and AURA_SECRET_KEY must differ.")
-            
+
             # DB/Redis passwords
             if len(self.postgres_password.get_secret_value()) < 8:
                 raise ValueError("postgres_password is too weak for production.")
             if not self.redis_password.get_secret_value():
                 raise ValueError("redis_password cannot be empty in production.")
-            
+
             # Security flags
             if self.aura_debug:
                 raise ValueError("AURA_DEBUG must be false in production.")
@@ -345,13 +354,13 @@ class Settings(BaseSettings):
                 raise ValueError("aura_api_base_url must use https in production.")
             if self.aura_log_format != LogFormat.JSON:
                 raise ValueError("aura_log_format must be JSON in production.")
-            
+
             # Primary provider check
             if self.primary_llm_provider == ModelProvider.GOOGLE and not self.google_ai_api_key:
                 raise ValueError("Google AI API Key required.")
             if self.primary_llm_provider == ModelProvider.OPENAI and not self.openai_api_key:
                 raise ValueError("OpenAI API Key required.")
-            
+
         return self
 
     @property

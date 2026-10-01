@@ -45,7 +45,6 @@ router = APIRouter(prefix="/eval", tags=["AI Operations"])
 
 class EvaluateSafetyRequest(BaseModel):
     run_id: uuid.UUID
-    organization_id: uuid.UUID
     policy_violations: int = 0
     unauthorized_tool_attempts: int = 0
     prompt_injection_attempts: list[str] = Field(default_factory=list)
@@ -55,7 +54,6 @@ class EvaluateSafetyRequest(BaseModel):
 
 class EvaluateQualityRequest(BaseModel):
     run_id: uuid.UUID
-    organization_id: uuid.UUID
     succeeded: bool
     expected_tools: list[str] = Field(default_factory=list)
     actual_tools_used: list[str] = Field(default_factory=list)
@@ -71,7 +69,6 @@ class CostEstimateRequest(BaseModel):
     provider: str
     input_tokens: int
     output_tokens: int
-    organization_id: uuid.UUID
     run_id: uuid.UUID | None = None
     per_run_budget_usd: float | None = None
 
@@ -83,7 +80,6 @@ class GoldenEvalRequest(BaseModel):
 
 
 class LogIncidentRequest(BaseModel):
-    organization_id: uuid.UUID
     run_id: uuid.UUID | None = None
     severity: IncidentSeverity
     category: str
@@ -93,7 +89,6 @@ class LogIncidentRequest(BaseModel):
 
 
 class RecordReplayRequest(BaseModel):
-    organization_id: uuid.UUID
     run_id: uuid.UUID
     request: str
     model: str
@@ -105,12 +100,10 @@ class RecordReplayRequest(BaseModel):
 
 @router.post("/safety", response_model=SafetyScore)
 async def evaluate_safety(req: EvaluateSafetyRequest, current_user: CurrentUserDep) -> SafetyScore:
-    if current_user.organization_id != req.organization_id:
-        raise HTTPException(status_code=403, detail="Access denied")
     """Compute safety score for an agent run."""
     return SafetyEvaluator.evaluate(
         run_id=req.run_id,
-        organization_id=req.organization_id,
+        organization_id=current_user.organization_id,
         action_history=[],
         policy_violations=req.policy_violations,
         unauthorized_tool_attempts=req.unauthorized_tool_attempts,
@@ -124,12 +117,10 @@ async def evaluate_safety(req: EvaluateSafetyRequest, current_user: CurrentUserD
 async def evaluate_quality(
     req: EvaluateQualityRequest, current_user: CurrentUserDep
 ) -> QualityScore:
-    if current_user.organization_id != req.organization_id:
-        raise HTTPException(status_code=403, detail="Access denied")
     """Compute quality score for an agent run."""
     return QualityEvaluator.evaluate(
         run_id=req.run_id,
-        organization_id=req.organization_id,
+        organization_id=current_user.organization_id,
         succeeded=req.succeeded,
         action_history=[],
         expected_tools=req.expected_tools,
@@ -144,8 +135,6 @@ async def evaluate_quality(
 
 @router.post("/cost")
 async def estimate_cost(req: CostEstimateRequest, current_user: CurrentUserDep) -> dict[str, Any]:
-    if current_user.organization_id != req.organization_id:
-        raise HTTPException(status_code=403, detail="Access denied")
     """Estimate and check budget for a model invocation."""
     estimate = CostManager.estimate_cost(
         model=req.model,
@@ -154,7 +143,7 @@ async def estimate_cost(req: CostEstimateRequest, current_user: CurrentUserDep) 
         output_tokens=req.output_tokens,
     )
     budget = CostManager.check_budget(
-        organization_id=req.organization_id,
+        organization_id=current_user.organization_id,
         estimated_cost_usd=estimate.estimated_cost_usd,
         run_id=req.run_id,
         per_run_budget_usd=req.per_run_budget_usd,
@@ -280,11 +269,9 @@ async def evaluate_against_golden(
 
 @router.post("/incidents")
 async def log_incident(req: LogIncidentRequest, current_user: CurrentUserDep) -> dict[str, Any]:
-    if current_user.organization_id != req.organization_id:
-        raise HTTPException(status_code=403, detail="Access denied")
     """Log an incident record."""
     incident = IncidentLogger.log(
-        organization_id=req.organization_id,
+        organization_id=current_user.organization_id,
         run_id=req.run_id,
         severity=req.severity,
         category=req.category,
@@ -295,16 +282,14 @@ async def log_incident(req: LogIncidentRequest, current_user: CurrentUserDep) ->
     return {"id": incident.id, "logged": True}
 
 
-@router.get("/incidents/{organization_id}")
+@router.get("/incidents")
 async def get_incidents(
-    organization_id: uuid.UUID, current_user: CurrentUserDep, limit: int = 50
+    current_user: CurrentUserDep, limit: int = 50
 ) -> dict[str, Any]:
-    if current_user.organization_id != organization_id:
-        raise HTTPException(status_code=403, detail="Access denied")
     """Get tenant-isolated incident log."""
-    incidents = IncidentLogger.get_org_incidents(organization_id, limit=limit)
+    incidents = IncidentLogger.get_org_incidents(current_user.organization_id, limit=limit)
     return {
-        "organization_id": str(organization_id),
+        "organization_id": str(current_user.organization_id),
         "count": len(incidents),
         "incidents": [i.model_dump() for i in incidents],
     }
@@ -312,11 +297,9 @@ async def get_incidents(
 
 @router.post("/replay/record")
 async def record_replay(req: RecordReplayRequest, current_user: CurrentUserDep) -> dict[str, Any]:
-    if current_user.organization_id != req.organization_id:
-        raise HTTPException(status_code=403, detail="Access denied")
     """Record a run for potential replay."""
     ReplayEngine.record(
-        organization_id=req.organization_id,
+        organization_id=current_user.organization_id,
         run_id=req.run_id,
         request=req.request,
         model=req.model,
@@ -325,7 +308,7 @@ async def record_replay(req: RecordReplayRequest, current_user: CurrentUserDep) 
     return {"run_id": str(req.run_id), "recorded": True}
 
 
-@router.get("/replay/{organization_id}/{run_id}")
+@router.get("/replay/{run_id}")
 async def get_replay(
     organization_id: uuid.UUID, current_user: CurrentUserDep, run_id: uuid.UUID
 ) -> dict[str, Any]:
@@ -376,13 +359,11 @@ async def get_ops_metrics(
 
 
 @router.get("/org/{organization_id}/spend")
-async def get_org_spend(organization_id: uuid.UUID, current_user: CurrentUserDep) -> dict[str, Any]:
-    if current_user.organization_id != organization_id:
-        raise HTTPException(status_code=403, detail="Access denied")
+async def get_org_spend(current_user: CurrentUserDep) -> dict[str, Any]:
     """Get current daily spend for an organization."""
-    spend = CostManager.get_org_daily_spend(organization_id)
+    spend = CostManager.get_org_daily_spend(current_user.organization_id)
     return {
-        "organization_id": str(organization_id),
+        "organization_id": str(current_user.organization_id),
         "daily_spend_usd": spend,
         "daily_budget_usd": 50.0,
         "remaining_usd": max(0.0, 50.0 - spend),
@@ -641,7 +622,7 @@ async def run_evaluation(
     db.add(eval_run)
     await db.commit()
 
-    background_tasks.add_task(execute_eval_run_background, eval_run.id, current_user.id)
+    background_tasks.add_task(execute_eval_run_background, eval_run.id, current_user.user_id)
     return {"run_id": str(eval_run.id), "status": "pending"}
 
 
