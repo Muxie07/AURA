@@ -4,6 +4,7 @@ AURA Phase 9 — Golden Datasets.
 Deterministic evaluation datasets for all task categories.
 No LLM inference required — all examples are handcrafted.
 """
+
 from __future__ import annotations
 
 from app.evaluation.schemas import GoldenExample

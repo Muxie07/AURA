@@ -6,6 +6,7 @@ Provides reusable dependency injection functions for:
 - Settings
 - Request context (request ID, current user, etc.)
 """
+
 from __future__ import annotations
 
 import uuid
@@ -32,17 +33,20 @@ DatabaseDep = Annotated[AsyncSession, Depends(get_db_session)]
 # Request Context
 # =============================================================================
 
+
 def get_request_id(request: Request) -> str:
     """Extract the request ID assigned by the RequestIDMiddleware."""
     return getattr(request.state, "request_id", "unknown")
+
 
 RequestIDDep = Annotated[str, Depends(get_request_id)]
 
 oauth2_scheme = HTTPBearer()
 
+
 def get_current_user_token(
     credentials: HTTPAuthorizationCredentials = Depends(oauth2_scheme),
-    settings: Settings = Depends(get_settings)
+    settings: Settings = Depends(get_settings),
 ) -> dict:
     token = credentials.credentials
     try:
@@ -50,7 +54,7 @@ def get_current_user_token(
             token,
             settings.aura_secret_key.get_secret_value(),
             algorithms=["HS256"],
-            options={"require_exp": True}
+            options={"require_exp": True},
         )
         if "sub" not in payload or "org_id" not in payload:
             raise HTTPException(status_code=401, detail="Invalid token claims")
@@ -58,10 +62,11 @@ def get_current_user_token(
     except JWTError as e:
         raise HTTPException(status_code=401, detail="Invalid token") from e
 
+
 async def get_current_user(
     request: Request,
     token_payload: dict = Depends(get_current_user_token),
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db_session),
 ):
     try:
         user_id = uuid.UUID(token_payload["sub"])
@@ -73,5 +78,6 @@ async def get_current_user(
         return user
     except ValueError as e:
         raise HTTPException(status_code=401, detail="Invalid UUID in token claims") from e
+
 
 CurrentUserDep = Annotated[Any, Depends(get_current_user)]

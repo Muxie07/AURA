@@ -5,6 +5,7 @@ Provides:
 - GET /health — Simple liveness probe
 - GET /api/v1/health — Detailed readiness probe with dependency checks
 """
+
 from __future__ import annotations
 
 import time

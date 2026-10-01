@@ -7,6 +7,7 @@ Provides:
 - Async test client with proper lifespan handling
 - Factory fixtures for common model creation
 """
+
 from __future__ import annotations
 
 import uuid
@@ -56,6 +57,7 @@ TEST_SETTINGS = Settings(
 # In-Memory SQLite Engine for fast unit tests
 # =============================================================================
 
+
 @pytest.fixture(scope="session")
 def sqlite_engine():
     """
@@ -66,6 +68,7 @@ def sqlite_engine():
     (JSONB, pgvector, etc.) should use the postgres_engine fixture instead.
     """
     from sqlalchemy.pool import StaticPool
+
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -98,6 +101,7 @@ async def db_session(sqlite_engine, create_tables) -> AsyncGenerator[AsyncSessio
         autoflush=False,
     )
     import app.database.base
+
     app.database.base._session_factory = factory
     async with factory() as session, session.begin():
         yield session
@@ -108,6 +112,7 @@ async def db_session(sqlite_engine, create_tables) -> AsyncGenerator[AsyncSessio
 # =============================================================================
 # FastAPI Test Client
 # =============================================================================
+
 
 @pytest_asyncio.fixture
 async def app(db_session: AsyncSession) -> FastAPI:
@@ -126,9 +131,8 @@ async def app(db_session: AsyncSession) -> FastAPI:
 
     def override_get_settings():
         return TEST_SETTINGS
+
     test_app.dependency_overrides[get_settings] = override_get_settings
-
-
 
     # Override the database dependency
     async def override_get_db():
@@ -137,15 +141,13 @@ async def app(db_session: AsyncSession) -> FastAPI:
     test_app.dependency_overrides[get_db_session] = override_get_db
 
     # Patch get_session_factory globally for tests
-    import app.database.base as db_base
     from unittest.mock import MagicMock
+
+    import app.database.base as db_base
+
     mock_factory = MagicMock()
     mock_factory.return_value = db_session
     db_base.get_session_factory = lambda: lambda: db_session
-
-
-
-
 
     return test_app
 
@@ -154,10 +156,11 @@ async def app(db_session: AsyncSession) -> FastAPI:
 async def client(app: FastAPI) -> AsyncGenerator[AsyncClient, None]:
     """Async HTTP test client."""
     from jose import jwt
+
     token = jwt.encode(
         {"sub": str(_DEFAULT_USER_ID), "org_id": str(_DEFAULT_ORG_ID), "exp": 9999999999},
         TEST_SETTINGS.aura_secret_key.get_secret_value(),
-        algorithm="HS256"
+        algorithm="HS256",
     )
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -230,6 +233,7 @@ async def conversation(
 async def cleanup_redis():
     yield
     import app.security.rate_limit as rl
+
     if rl._redis_client is not None:
         try:
             await rl._redis_client.aclose()

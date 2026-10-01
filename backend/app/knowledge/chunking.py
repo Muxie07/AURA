@@ -28,10 +28,7 @@ class DocumentChunker:
                 separator = sep
                 break
 
-        if separator:
-            splits = text.split(separator)
-        else:
-            splits = list(text)
+        splits = text.split(separator) if separator else list(text)
 
         good_splits: list[str] = []
         _separator = separator if separator is not None else ""
@@ -107,14 +104,15 @@ class DocumentChunker:
                 current_pos = pos
             progress = current_pos / text_length if text_length > 0 else 0
 
-            if "pages" in chunk_meta and isinstance(chunk_meta["pages"], int) and chunk_meta["pages"] > 0:
+            if (
+                "pages" in chunk_meta
+                and isinstance(chunk_meta["pages"], int)
+                and chunk_meta["pages"] > 0
+            ):
                 approx_page = max(1, math.ceil(progress * chunk_meta["pages"]))
                 chunk_meta["approx_page"] = approx_page
 
-            chunks.append({
-                "content": chunk_content,
-                "metadata": chunk_meta
-            })
+            chunks.append({"content": chunk_content, "metadata": chunk_meta})
             chunk_idx += 1
 
         return chunks

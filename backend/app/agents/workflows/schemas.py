@@ -10,6 +10,7 @@ class QuotationLine(BaseModel):
     unit_price: Decimal
     subtotal: Decimal
 
+
 class QuotationDraft(BaseModel):
     quotation_id: str
     customer_id: str

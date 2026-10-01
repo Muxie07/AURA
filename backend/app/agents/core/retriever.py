@@ -11,6 +11,7 @@ from app.knowledge.rag_service import RAGService
 
 logger = structlog.get_logger(__name__)
 
+
 class RetrieveNode(BaseNode):
     def __init__(self, db: AsyncSession, rag_service: RAGService):
         self.db = db
@@ -28,7 +29,9 @@ class RetrieveNode(BaseNode):
         try:
             # Get the first KB for the org
             result = await self.db.execute(
-                sa.select(KnowledgeBase).where(KnowledgeBase.organization_id == state.organization_id)
+                sa.select(KnowledgeBase).where(
+                    KnowledgeBase.organization_id == state.organization_id
+                )
             )
             kb = result.scalars().first()
 
@@ -36,7 +39,7 @@ class RetrieveNode(BaseNode):
                 rag_response = await self.rag.query(
                     organization_id=state.organization_id,
                     knowledge_base_id=kb.id,
-                    question=state.original_request
+                    question=state.original_request,
                 )
 
                 if rag_response.sources:
@@ -46,7 +49,7 @@ class RetrieveNode(BaseNode):
                             "content": s.content,
                             "chunk_id": s.chunk_id,
                             "score": s.score,
-                            "metadata": s.metadata
+                            "metadata": s.metadata,
                         }
                         for s in rag_response.sources
                     ]

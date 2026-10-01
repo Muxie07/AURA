@@ -7,6 +7,7 @@ from app.agents.core.state import AgentState
 
 logger = structlog.get_logger(__name__)
 
+
 class BaseNode(ABC):
     """Abstract base class for all agent graph nodes."""
 
@@ -28,7 +29,9 @@ class BaseNode(ABC):
             logger.info("node_execution_completed", node=self.name, run_id=str(state.run_id))
             return new_state
         except Exception as e:
-            logger.error("node_execution_failed", node=self.name, run_id=str(state.run_id), error=str(e))
+            logger.error(
+                "node_execution_failed", node=self.name, run_id=str(state.run_id), error=str(e)
+            )
             raise
 
     @abstractmethod

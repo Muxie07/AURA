@@ -9,6 +9,7 @@ class PolicyDecision(StrEnum):
     REQUIRE_APPROVAL = "REQUIRE_APPROVAL"
     DENY = "DENY"
 
+
 class PolicyContext(BaseModel):
     organization_id: uuid.UUID
     user_id: uuid.UUID | None
@@ -16,6 +17,7 @@ class PolicyContext(BaseModel):
     risk_level: str
     arguments: dict
     permissions: list[str]
+
 
 class PolicyRuleResult(BaseModel):
     decision: PolicyDecision

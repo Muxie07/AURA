@@ -13,6 +13,7 @@ Run this after `alembic upgrade head`.
 Usage:
     python scripts/seed_data.py
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -24,10 +25,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
 
 import os
-os.chdir(Path(__file__).parent.parent / "backend")
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+os.chdir(Path(__file__).parent.parent / "backend")
 
 from app.config.settings import get_settings
 from app.database.models import (
@@ -38,6 +37,8 @@ from app.database.models import (
     Organization,
     User,
 )
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 settings = get_settings()
 
@@ -49,7 +50,9 @@ MANAGER_ID = uuid.UUID("00000000-0000-0000-0000-000000000003")
 
 async def seed_organization(session: AsyncSession) -> Organization:
     """Create the demo organization if it doesn't exist."""
-    result = await session.execute(select(Organization).where(Organization.id == ORG_ID))
+    result = await session.execute(
+        select(Organization).where(Organization.id == ORG_ID)
+    )
     existing = result.scalar_one_or_none()
     if existing:
         print(f"  [skip] Organization already exists: {existing.name}")
@@ -114,7 +117,9 @@ async def seed_users(session: AsyncSession, org: Organization) -> tuple[User, Us
     return admin, manager
 
 
-async def seed_conversations(session: AsyncSession, org: Organization, user: User) -> None:
+async def seed_conversations(
+    session: AsyncSession, org: Organization, user: User
+) -> None:
     """Create sample conversations with realistic messages."""
     # Check if we already have conversations
     result = await session.execute(
@@ -140,7 +145,7 @@ async def seed_conversations(session: AsyncSession, org: Organization, user: Use
             conversation_id=conv1.id,
             role=MessageRole.USER,
             content="Hello, we need 500 units of Product X for our Q4 campaign. "
-                    "Please send us a quotation for Customer ABC (ID: CUST-001).",
+            "Please send us a quotation for Customer ABC (ID: CUST-001).",
         ),
         Message(
             conversation_id=conv1.id,
@@ -183,7 +188,7 @@ async def seed_conversations(session: AsyncSession, org: Organization, user: Use
     )
 
     await session.flush()
-    print(f"  [created] 2 sample conversations with messages.")
+    print("  [created] 2 sample conversations with messages.")
 
 
 async def main() -> None:
@@ -194,17 +199,16 @@ async def main() -> None:
     engine = create_async_engine(settings.database_url, echo=False)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async with factory() as session:
-        async with session.begin():
-            org = await seed_organization(session)
-            admin, manager = await seed_users(session, org)
-            await seed_conversations(session, org, admin)
+    async with factory() as session, session.begin():
+        org = await seed_organization(session)
+        admin, manager = await seed_users(session, org)
+        await seed_conversations(session, org, admin)
 
     await engine.dispose()
     print("\n✅ Seed complete!")
     print(f"   Org ID:    {ORG_ID}")
     print(f"   User ID:   {USER_ID}")
-    print(f"   API Docs:  http://localhost:8000/docs")
+    print("   API Docs:  http://localhost:8000/docs")
     print()
 
 

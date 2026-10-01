@@ -30,6 +30,7 @@ class LocalFileStorage(FileStorage):
     Useful for local dev or Phase 3 prototyping.
     Production will use S3.
     """
+
     def __init__(self, base_dir: str = "data/uploads"):
         self.base_dir = Path(base_dir)
         self.base_dir.mkdir(parents=True, exist_ok=True)
@@ -46,7 +47,7 @@ class LocalFileStorage(FileStorage):
         unique_name = f"{uuid.uuid4()}_{filename}"
         file_path = self.base_dir / unique_name
 
-        async with aiofiles.open(file_path, 'wb') as f:
+        async with aiofiles.open(file_path, "wb") as f:
             await f.write(file_content)
 
         return str(file_path)
@@ -56,7 +57,7 @@ class LocalFileStorage(FileStorage):
         if not safe_path.exists():
             raise FileNotFoundError(f"File not found: {path}")
 
-        async with aiofiles.open(safe_path, 'rb') as f:
+        async with aiofiles.open(safe_path, "rb") as f:
             return await f.read()
 
     async def delete_file(self, path: str) -> None:

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 class AgentNodeState(StrEnum):
     """Explicit lifecycle states for the state machine."""
+
     CREATED = "CREATED"
     UNDERSTANDING = "UNDERSTANDING"
     PLANNING = "PLANNING"
@@ -23,6 +24,7 @@ class AgentNodeState(StrEnum):
     CANCELLED = "CANCELLED"
     TIMEOUT = "TIMEOUT"
 
+
 class FailureCategory(StrEnum):
     TRANSIENT = "TRANSIENT"
     VALIDATION = "VALIDATION"
@@ -35,11 +37,13 @@ class FailureCategory(StrEnum):
     TIMEOUT = "TIMEOUT"
     UNKNOWN = "UNKNOWN"
 
+
 class AgentError(BaseModel):
     category: FailureCategory
     message: str
     details: dict[str, Any] = Field(default_factory=dict)
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
 
 class AgentPlanStep(BaseModel):
     id: str
@@ -52,9 +56,11 @@ class AgentPlanStep(BaseModel):
     verification_criteria: str = ""
     status: str = "pending"
 
+
 class AgentPlan(BaseModel):
     goal: str
     steps: list[AgentPlanStep]
+
 
 class AgentAction(BaseModel):
     action_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -63,10 +69,12 @@ class AgentAction(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
     status: str = "PENDING"
 
+
 class ActionVerification(BaseModel):
     success: bool
     confidence: float
     issues: list[str] = Field(default_factory=list)
+
 
 class ActionHistoryItem(BaseModel):
     action: AgentAction
@@ -82,6 +90,7 @@ class AgentLimits(BaseModel):
     max_tool_calls: int = 15
     max_retries: int = 5
     overall_timeout_seconds: int = 300
+
 
 class AgentState(BaseModel):
     limits: AgentLimits = Field(default_factory=AgentLimits)
@@ -124,8 +133,8 @@ class AgentState(BaseModel):
     started_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
-    def add_error(self, category: FailureCategory, message: str, details: dict[str, Any] | None = None) -> None:
-        self.errors.append(
-            AgentError(category=category, message=message, details=details or {})
-        )
+    def add_error(
+        self, category: FailureCategory, message: str, details: dict[str, Any] | None = None
+    ) -> None:
+        self.errors.append(AgentError(category=category, message=message, details=details or {}))
         self.status = AgentNodeState.FAILED

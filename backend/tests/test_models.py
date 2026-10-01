@@ -4,6 +4,7 @@ AURA Tests — ORM Models.
 Tests the database model layer: field defaults, relationships,
 enum values, and repr methods.
 """
+
 from __future__ import annotations
 
 import uuid

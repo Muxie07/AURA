@@ -5,14 +5,17 @@ from app.tools.executor import InternalToolExecutor
 from app.tools.schemas import RiskLevel, ToolContext, ToolDefinition
 
 
-async def communication_create_email_draft_handler(arguments: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+async def communication_create_email_draft_handler(
+    arguments: dict[str, Any], context: ToolContext
+) -> dict[str, Any]:
     return {
         "draft_id": f"EML-{uuid.uuid4().hex[:8]}",
         "recipient": arguments.get("recipient"),
         "subject": arguments.get("subject"),
         "body": arguments.get("body"),
-        "status": "draft_created"
+        "status": "draft_created",
     }
+
 
 communication_create_email_draft_def = ToolDefinition(
     name="communication.create_email_draft",
@@ -22,11 +25,13 @@ communication_create_email_draft_def = ToolDefinition(
         "properties": {
             "recipient": {"type": "string"},
             "subject": {"type": "string"},
-            "body": {"type": "string"}
+            "body": {"type": "string"},
         },
-        "required": ["recipient", "subject", "body"]
+        "required": ["recipient", "subject", "body"],
     },
-    risk_level=RiskLevel.WRITE
+    risk_level=RiskLevel.WRITE,
 )
 
-communication_create_email_draft_tool = InternalToolExecutor(communication_create_email_draft_def, communication_create_email_draft_handler)
+communication_create_email_draft_tool = InternalToolExecutor(
+    communication_create_email_draft_def, communication_create_email_draft_handler
+)

@@ -8,6 +8,7 @@ Design principle: Errors are values. Use typed exceptions to communicate
 intent, not just failure. Every error should be loggable, serializable,
 and translatable to a specific HTTP status code.
 """
+
 from __future__ import annotations
 
 from http import HTTPStatus

@@ -8,21 +8,28 @@ from httpx import AsyncClient
 async def test_auth_rejection_no_token(client: AsyncClient):
     """Verify that unauthenticated requests to protected endpoints fail."""
     client.headers["authorization"] = ""
-    response = await client.post("/api/v1/runs", json={"conversation_id": str(uuid4()), "request": "test"})
+    response = await client.post(
+        "/api/v1/runs", json={"conversation_id": str(uuid4()), "request": "test"}
+    )
     assert response.status_code == 403 or response.status_code == 401
+
 
 @pytest.mark.asyncio
 async def test_invalid_token(client: AsyncClient):
     """Verify that invalid tokens are rejected."""
     client.headers["authorization"] = "Bearer invalid_token"
-    response = await client.post("/api/v1/runs", json={"conversation_id": str(uuid4()), "request": "test"})
+    response = await client.post(
+        "/api/v1/runs", json={"conversation_id": str(uuid4()), "request": "test"}
+    )
     assert response.status_code == 401
+
 
 @pytest.mark.asyncio
 async def test_tenant_isolation(client: AsyncClient, organization, user):
     """Verify that cross-tenant access is restricted."""
     response = await client.get("/api/v1/conversations")
     assert response.status_code == 200
+
 
 @pytest.mark.asyncio
 async def test_rate_limiting(client: AsyncClient, monkeypatch: pytest.MonkeyPatch):
@@ -32,6 +39,7 @@ async def test_rate_limiting(client: AsyncClient, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("PRIMARY_LLM_PROVIDER", "mock")
 
     from app.config.settings import get_settings
+
     get_settings.cache_clear()
 
     settings = get_settings()
@@ -40,6 +48,7 @@ async def test_rate_limiting(client: AsyncClient, monkeypatch: pytest.MonkeyPatc
 
     # Clear the redis key for the test client IP to avoid cross-run state issues
     import redis.asyncio as aioredis
+
     redis_client = aioredis.from_url(settings.redis_url)
     await redis_client.delete("rate_limit:ai_generate:127.0.0.1")
     await redis_client.aclose()

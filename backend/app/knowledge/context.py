@@ -25,10 +25,12 @@ class ContextBuilder:
         approx_tokens = 0
 
         for idx, r in enumerate(unique_results, 1):
-            page_info = f"<page>{r.metadata['approx_page']}</page>\n" if "approx_page" in r.metadata else ""
+            page_info = (
+                f"<page>{r.metadata['approx_page']}</page>\n" if "approx_page" in r.metadata else ""
+            )
 
             chunk_str = (
-                f"<document index=\"{idx}\">\n"
+                f'<document index="{idx}">\n'
                 f"<source>{r.source}</source>\n"
                 f"<chunk_id>{r.chunk_id}</chunk_id>\n"
                 f"{page_info}"

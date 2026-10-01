@@ -10,6 +10,7 @@ def test_text_parser():
     assert text == "Hello world"
     assert meta["format"] == "txt"
 
+
 def test_markdown_parser():
     parser = get_parser("text/markdown", "test.md")
     assert isinstance(parser, MarkdownParser)

@@ -5,6 +5,7 @@ Maps domain errors to structured HTTP error responses.
 Ensures all errors — whether domain, validation, or unexpected — produce
 consistent JSON responses with request IDs and machine-readable codes.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any

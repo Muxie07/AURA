@@ -7,6 +7,7 @@ from app.agents.core.state import AgentAction
 
 logger = structlog.get_logger(__name__)
 
+
 class ActionExecutor(ABC):
     @property
     @abstractmethod
@@ -17,6 +18,7 @@ class ActionExecutor(ABC):
     async def execute(self, action: AgentAction, context: dict[str, Any]) -> dict[str, Any]:
         """Executes the action deterministically and safely."""
         pass
+
 
 class ActionRegistry:
     """Registry to map action types to their safe executors."""

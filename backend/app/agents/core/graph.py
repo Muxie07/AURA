@@ -10,6 +10,7 @@ from app.agents.core.state import AgentNodeState, AgentState, FailureCategory
 
 logger = structlog.get_logger(__name__)
 
+
 class WorkflowGraph:
     """Explicit state machine / graph for agent execution."""
 
@@ -20,7 +21,9 @@ class WorkflowGraph:
     def add_node(self, state_key: AgentNodeState, node: BaseNode) -> None:
         self.nodes[state_key] = node
 
-    def add_transition(self, from_state: AgentNodeState, transition_func: Callable[[AgentState], AgentNodeState]) -> None:
+    def add_transition(
+        self, from_state: AgentNodeState, transition_func: Callable[[AgentState], AgentNodeState]
+    ) -> None:
         self.transitions[from_state] = transition_func
 
     async def run(self, state: AgentState, **kwargs: Any) -> AgentState:
@@ -31,7 +34,7 @@ class WorkflowGraph:
             AgentNodeState.FAILED,
             AgentNodeState.CANCELLED,
             AgentNodeState.TIMEOUT,
-            AgentNodeState.WAITING
+            AgentNodeState.WAITING,
         }
 
         start_time = datetime.now(UTC)
@@ -43,7 +46,7 @@ class WorkflowGraph:
             if state.iteration_count > limits.max_agent_iterations:
                 state.add_error(
                     category=FailureCategory.TIMEOUT,
-                    message=f"Agent exceeded maximum iterations ({limits.max_agent_iterations})"
+                    message=f"Agent exceeded maximum iterations ({limits.max_agent_iterations})",
                 )
                 state.status = AgentNodeState.TIMEOUT
                 break
@@ -53,7 +56,7 @@ class WorkflowGraph:
             if elapsed_seconds > limits.agent_timeout_seconds:
                 state.add_error(
                     category=FailureCategory.TIMEOUT,
-                    message=f"Agent exceeded maximum time ({limits.agent_timeout_seconds}s)"
+                    message=f"Agent exceeded maximum time ({limits.agent_timeout_seconds}s)",
                 )
                 state.status = AgentNodeState.TIMEOUT
                 break
@@ -64,7 +67,7 @@ class WorkflowGraph:
             if not current_node:
                 state.add_error(
                     category=FailureCategory.BUSINESS_RULE,
-                    message=f"No node registered for state {current_status}"
+                    message=f"No node registered for state {current_status}",
                 )
                 state.status = AgentNodeState.FAILED
                 break
@@ -72,18 +75,19 @@ class WorkflowGraph:
             # 3. Execute Node
             try:
                 node_start = datetime.now(UTC)
-                tracer = kwargs.get('tracer')
+                tracer = kwargs.get("tracer")
                 if tracer:
                     await tracer.record_event(
                         event_type="NODE_STARTED",
                         component=current_node.name,
-                        metadata={"state": current_status}
+                        metadata={"state": current_status},
                     )
                 import asyncio
+
                 # Implement per-node timeout. A single node should not hang indefinitely.
                 state = await asyncio.wait_for(
                     current_node.execute(state, **kwargs),
-                    timeout=30.0  # 30 seconds max per node
+                    timeout=30.0,  # 30 seconds max per node
                 )
                 state.updated_at = datetime.now(UTC)
                 if tracer:
@@ -92,21 +96,20 @@ class WorkflowGraph:
                         event_type="NODE_COMPLETED",
                         component=current_node.name,
                         metadata={"new_state": state.status},
-                        duration_ms=duration_ms
+                        duration_ms=duration_ms,
                     )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.error("graph_node_timeout", state=current_status)
                 state.add_error(
                     category=FailureCategory.TIMEOUT,
-                    message=f"Node {current_node.name} execution timed out after 30s."
+                    message=f"Node {current_node.name} execution timed out after 30s.",
                 )
                 state.status = AgentNodeState.TIMEOUT
                 break
             except Exception as e:
                 logger.error("graph_node_error", error=str(e), state=current_status)
                 state.add_error(
-                    category=FailureCategory.UNKNOWN,
-                    message=f"Node execution failed: {e}"
+                    category=FailureCategory.UNKNOWN, message=f"Node execution failed: {e}"
                 )
                 state.status = AgentNodeState.FAILED
                 break
@@ -121,7 +124,7 @@ class WorkflowGraph:
                     # No transition defined, halt
                     state.add_error(
                         category=FailureCategory.BUSINESS_RULE,
-                        message=f"No transition defined from state {current_status}"
+                        message=f"No transition defined from state {current_status}",
                     )
                     state.status = AgentNodeState.FAILED
                     break

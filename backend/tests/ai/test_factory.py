@@ -12,6 +12,7 @@ def test_get_mock_provider(monkeypatch: Any) -> None:
     provider = get_llm_provider()
     assert isinstance(provider, MockLLMProvider)
 
+
 def test_get_openai_provider(monkeypatch: Any) -> None:
     monkeypatch.setenv("PRIMARY_LLM_PROVIDER", "openai")
     monkeypatch.setenv("OPENAI_API_KEY", "dummy")
@@ -19,10 +20,12 @@ def test_get_openai_provider(monkeypatch: Any) -> None:
     provider = get_llm_provider()
     assert isinstance(provider, OpenAIProvider)
 
+
 def test_get_google_provider(monkeypatch: Any) -> None:
     monkeypatch.setenv("PRIMARY_LLM_PROVIDER", "google")
     monkeypatch.setenv("GOOGLE_AI_API_KEY", "dummy")
     get_settings.cache_clear()
     from app.ai.providers.google import GeminiProvider
+
     provider = get_llm_provider()
     assert isinstance(provider, GeminiProvider)

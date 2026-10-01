@@ -10,6 +10,7 @@ from app.ai.services.llm import LLMService
 
 logger = structlog.get_logger(__name__)
 
+
 class RetrievalResult(BaseModel):
     chunk_id: str
     document_id: str
@@ -19,6 +20,7 @@ class RetrievalResult(BaseModel):
     source: str
     version: int
 
+
 class Retriever:
     """Handles semantic search with tenant isolation."""
 
@@ -26,6 +28,7 @@ class Retriever:
         self.db = db_session
         self.llm = llm_service
         from app.config.settings import get_settings
+
         self.embedding_model = get_settings().embedding_model
 
     async def search(
@@ -34,7 +37,7 @@ class Retriever:
         knowledge_base_id: uuid.UUID,
         query: str,
         top_k: int = 5,
-        hybrid: bool = True
+        hybrid: bool = True,
     ) -> list[RetrievalResult]:
         """
         Executes a vector similarity search isolated to the specified organization and KB.
@@ -45,7 +48,7 @@ class Retriever:
             query_vector = f"[{','.join(map(str, query_embedding))}]"
         except Exception:
             # Fallback for mocked environments where embed fails
-            query_vector = "[0.0]" # Dummy vector
+            query_vector = "[0.0]"  # Dummy vector
 
         kw = query
 
@@ -83,40 +86,49 @@ class Retriever:
 
         try:
             # Vector
-            res_v = await self.db.execute(stmt_vector, {
-                "query_vector": query_vector,
-                "org_id": str(organization_id),
-                "kb_id": str(knowledge_base_id),
-                "limit": top_k
-            })
+            res_v = await self.db.execute(
+                stmt_vector,
+                {
+                    "query_vector": query_vector,
+                    "org_id": str(organization_id),
+                    "kb_id": str(knowledge_base_id),
+                    "limit": top_k,
+                },
+            )
             for rank, row in enumerate(res_v.fetchall()):
                 cid = str(row[0])
                 if cid not in results_dict:
                     results_dict[cid] = {"row": row, "score": 0.0}
-                results_dict[cid]["score"] += 1.0 / (rank + 60) # RRF
+                results_dict[cid]["score"] += 1.0 / (rank + 60)  # RRF
 
             if hybrid:
-                res_k = await self.db.execute(stmt_keyword, {
-                    "kw": kw,
-                    "org_id": str(organization_id),
-                    "kb_id": str(knowledge_base_id),
-                    "limit": top_k
-                })
+                res_k = await self.db.execute(
+                    stmt_keyword,
+                    {
+                        "kw": kw,
+                        "org_id": str(organization_id),
+                        "kb_id": str(knowledge_base_id),
+                        "limit": top_k,
+                    },
+                )
                 for rank, row in enumerate(res_k.fetchall()):
                     cid = str(row[0])
                     if cid not in results_dict:
                         results_dict[cid] = {"row": row, "score": 0.0}
-                    results_dict[cid]["score"] += 1.0 / (rank + 60) # RRF
+                    results_dict[cid]["score"] += 1.0 / (rank + 60)  # RRF
 
         except Exception as e:
             logger.warning("vector_search_failed", error=str(e))
             # Fallback to pure keyword if vector fails (e.g., sqlite mock environment)
-            res_k = await self.db.execute(stmt_keyword, {
-                "kw": kw,
-                "org_id": str(organization_id),
-                "kb_id": str(knowledge_base_id),
-                "limit": top_k
-            })
+            res_k = await self.db.execute(
+                stmt_keyword,
+                {
+                    "kw": kw,
+                    "org_id": str(organization_id),
+                    "kb_id": str(knowledge_base_id),
+                    "limit": top_k,
+                },
+            )
             for rank, row in enumerate(res_k.fetchall()):
                 cid = str(row[0])
                 if cid not in results_dict:
@@ -124,19 +136,23 @@ class Retriever:
                 results_dict[cid]["score"] += 1.0 / (rank + 60)
 
         # Sort by RRF score
-        sorted_cids = sorted(results_dict.keys(), key=lambda x: results_dict[x]["score"], reverse=True)[:top_k]
+        sorted_cids = sorted(
+            results_dict.keys(), key=lambda x: results_dict[x]["score"], reverse=True
+        )[:top_k]
 
         final_results = []
         for cid in sorted_cids:
             row = results_dict[cid]["row"]
-            final_results.append(RetrievalResult(
-                chunk_id=str(row[0]),
-                document_id=str(row[1]),
-                content=row[2],
-                metadata=row[3],
-                source=row[4],
-                version=row[5] if row[5] is not None else 1,
-                score=results_dict[cid]["score"]
-            ))
+            final_results.append(
+                RetrievalResult(
+                    chunk_id=str(row[0]),
+                    document_id=str(row[1]),
+                    content=row[2],
+                    metadata=row[3],
+                    source=row[4],
+                    version=row[5] if row[5] is not None else 1,
+                    score=results_dict[cid]["score"],
+                )
+            )
 
         return final_results

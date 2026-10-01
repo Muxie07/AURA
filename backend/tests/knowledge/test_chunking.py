@@ -3,7 +3,7 @@ from app.knowledge.chunking import DocumentChunker
 
 def test_chunker_basic():
     chunker = DocumentChunker(chunk_size=10, chunk_overlap=2)
-    text = "012345678901234567890" # 21 chars
+    text = "012345678901234567890"  # 21 chars
     # chunks:
     # 0123456789
     # 8901234567

@@ -1,7 +1,8 @@
 """AURA Auth endpoints — login and token issuance."""
+
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import bcrypt
 from fastapi import APIRouter, HTTPException
@@ -37,7 +38,7 @@ async def login(body: LoginRequest, db: DatabaseDep, settings: SettingsDep):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if not bcrypt.checkpw(body.password.encode("utf-8"), user.hashed_password.encode("utf-8")):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    expire = datetime.now(timezone.utc) + timedelta(hours=24)
+    expire = datetime.now(UTC) + timedelta(hours=24)
     payload = {
         "sub": str(user.id),
         "org_id": str(user.organization_id),

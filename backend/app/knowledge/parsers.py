@@ -8,6 +8,7 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
+
 class DocumentParser(ABC):
     """Base abstraction for all document parsers."""
 
@@ -15,6 +16,7 @@ class DocumentParser(ABC):
     def parse(self, content: bytes) -> tuple[str, dict[str, Any]]:
         """Parses document bytes into (extracted_text, metadata)."""
         pass
+
 
 class TextParser(DocumentParser):
     def parse(self, content: bytes) -> tuple[str, dict[str, Any]]:
@@ -25,6 +27,7 @@ class TextParser(DocumentParser):
             text = content.decode("windows-1252", errors="ignore")
         return text, {"format": "txt"}
 
+
 class MarkdownParser(DocumentParser):
     def parse(self, content: bytes) -> tuple[str, dict[str, Any]]:
         # For Phase 3, markdown is treated as text
@@ -33,6 +36,7 @@ class MarkdownParser(DocumentParser):
         except UnicodeDecodeError:
             text = content.decode("windows-1252", errors="ignore")
         return text, {"format": "markdown"}
+
 
 class PDFParser(DocumentParser):
     def parse(self, content: bytes) -> tuple[str, dict[str, Any]]:
@@ -53,12 +57,13 @@ class PDFParser(DocumentParser):
                 "format": "pdf",
                 "pages": len(reader.pages),
                 "author": meta.get("/Author", "Unknown"),
-                "title": meta.get("/Title", "Unknown")
+                "title": meta.get("/Title", "Unknown"),
             }
             return full_text, metadata
         except Exception as e:
             logger.error("pdf_parsing_failed", error=str(e))
             raise ValueError(f"Failed to parse PDF: {e}") from e
+
 
 class DocxParser(DocumentParser):
     def parse(self, content: bytes) -> tuple[str, dict[str, Any]]:
@@ -68,14 +73,12 @@ class DocxParser(DocumentParser):
 
             full_text = "\n".join([para.text for para in doc.paragraphs])
 
-            metadata = {
-                "format": "docx",
-                "paragraphs": len(doc.paragraphs)
-            }
+            metadata = {"format": "docx", "paragraphs": len(doc.paragraphs)}
             return full_text, metadata
         except Exception as e:
             logger.error("docx_parsing_failed", error=str(e))
             raise ValueError(f"Failed to parse DOCX: {e}") from e
+
 
 def get_parser(content_type: str, filename: str) -> DocumentParser:
     """Factory to get the right parser based on content_type/filename."""

@@ -14,6 +14,7 @@ Deterministic tests for:
 
 All tests are fully deterministic (no LLM calls).
 """
+
 from __future__ import annotations
 
 import uuid
@@ -42,6 +43,7 @@ from app.evaluation.schemas import (
 
 # ─── Fixtures ─────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture(autouse=True)
 def cleanup():
     """Reset shared state between tests."""
@@ -53,8 +55,8 @@ def cleanup():
 
 # ─── Safety Evaluation Tests ──────────────────────────────────────────────────
 
-class TestSafetyEvaluator:
 
+class TestSafetyEvaluator:
     def test_perfect_safety_score(self):
         """A clean run with no violations should score 1.0."""
         org_id = uuid.uuid4()
@@ -73,7 +75,9 @@ class TestSafetyEvaluator:
         """Each policy violation should reduce the safety score."""
         org_id = uuid.uuid4()
         run_id = uuid.uuid4()
-        score_clean = SafetyEvaluator.evaluate(run_id=run_id, organization_id=org_id, action_history=[])
+        score_clean = SafetyEvaluator.evaluate(
+            run_id=run_id, organization_id=org_id, action_history=[]
+        )
         score_violation = SafetyEvaluator.evaluate(
             run_id=run_id,
             organization_id=org_id,
@@ -133,8 +137,8 @@ class TestSafetyEvaluator:
 
 # ─── Quality Evaluation Tests ─────────────────────────────────────────────────
 
-class TestQualityEvaluator:
 
+class TestQualityEvaluator:
     def test_successful_run_with_correct_tools(self):
         """A successful run with correct tool usage scores high."""
         org_id = uuid.uuid4()
@@ -203,12 +207,20 @@ class TestQualityEvaluator:
         org_id = uuid.uuid4()
         run_id = uuid.uuid4()
         score_fast = QualityEvaluator.evaluate(
-            run_id=run_id, organization_id=org_id, succeeded=True,
-            action_history=[], latency_ms=1000.0, target_latency_ms=5000.0,
+            run_id=run_id,
+            organization_id=org_id,
+            succeeded=True,
+            action_history=[],
+            latency_ms=1000.0,
+            target_latency_ms=5000.0,
         )
         score_slow = QualityEvaluator.evaluate(
-            run_id=run_id, organization_id=org_id, succeeded=True,
-            action_history=[], latency_ms=20000.0, target_latency_ms=5000.0,
+            run_id=run_id,
+            organization_id=org_id,
+            succeeded=True,
+            action_history=[],
+            latency_ms=20000.0,
+            target_latency_ms=5000.0,
         )
         assert score_fast.latency_score > score_slow.latency_score
 
@@ -239,8 +251,8 @@ class TestQualityEvaluator:
 
 # ─── Cost Management Tests ────────────────────────────────────────────────────
 
-class TestCostManager:
 
+class TestCostManager:
     def test_cost_estimation_accuracy(self):
         """Cost estimates should match known model pricing."""
         estimate = CostManager.estimate_cost(
@@ -287,8 +299,12 @@ class TestCostManager:
         """Daily spend should accumulate correctly across OK runs."""
         org_id = uuid.uuid4()
         # Use small amounts well within default budget
-        CostManager.check_budget(org_id, estimated_cost_usd=0.05, per_run_budget_usd=1.0, org_daily_budget_usd=100.0)
-        CostManager.check_budget(org_id, estimated_cost_usd=0.10, per_run_budget_usd=1.0, org_daily_budget_usd=100.0)
+        CostManager.check_budget(
+            org_id, estimated_cost_usd=0.05, per_run_budget_usd=1.0, org_daily_budget_usd=100.0
+        )
+        CostManager.check_budget(
+            org_id, estimated_cost_usd=0.10, per_run_budget_usd=1.0, org_daily_budget_usd=100.0
+        )
         spend = CostManager.get_org_daily_spend(org_id)
         assert spend == pytest.approx(0.15, abs=0.01)
 
@@ -325,8 +341,8 @@ class TestCostManager:
 
 # ─── Benchmark Tests ──────────────────────────────────────────────────────────
 
-class TestBenchmarkEngine:
 
+class TestBenchmarkEngine:
     def test_get_specific_benchmark(self):
         """Should retrieve pre-computed benchmarks by model and task type."""
         result = BenchmarkEngine.get_benchmark("gpt-4o", "COMPLEX_REASONING")
@@ -371,8 +387,8 @@ class TestBenchmarkEngine:
 
 # ─── Golden Dataset Tests ─────────────────────────────────────────────────────
 
-class TestGoldenDatasets:
 
+class TestGoldenDatasets:
     def test_all_examples_loaded(self):
         """Should have examples across all categories."""
         assert len(ALL_GOLDEN_EXAMPLES) >= 10
@@ -447,8 +463,8 @@ class TestGoldenDatasets:
 
 # ─── Incident Logger Tests ────────────────────────────────────────────────────
 
-class TestIncidentLogger:
 
+class TestIncidentLogger:
     def test_log_incident(self):
         """Should log and retrieve incidents correctly."""
         org_id = uuid.uuid4()
@@ -511,8 +527,8 @@ class TestIncidentLogger:
 
 # ─── Replay Engine Tests ──────────────────────────────────────────────────────
 
-class TestReplayEngine:
 
+class TestReplayEngine:
     def test_record_and_retrieve(self):
         """Should record and retrieve a run correctly."""
         org_id = uuid.uuid4()
@@ -548,6 +564,7 @@ class TestReplayEngine:
     def test_export_json(self):
         """JSON export should produce valid JSON string."""
         import json
+
         org_id = uuid.uuid4()
         run_id = uuid.uuid4()
         ReplayEngine.record(
@@ -589,8 +606,8 @@ class TestReplayEngine:
 
 # ─── Security Attack Evaluation Tests ────────────────────────────────────────
 
-class TestSecurityEvaluation:
 
+class TestSecurityEvaluation:
     def test_all_attack_types_covered(self):
         """Should have multiple attack types in golden dataset."""
         attacks = get_attack_examples()

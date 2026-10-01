@@ -4,6 +4,7 @@ AURA Phase 9 — Cost Manager.
 Provides model cost configuration, token budget enforcement,
 and per-run cost estimation. Prevents runaway AI spending.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -18,18 +19,18 @@ logger = structlog.get_logger(__name__)
 # Model cost table (USD per 1000 tokens, input/output)
 MODEL_COST_TABLE: dict[str, tuple[float, float]] = {
     # OpenAI
-    "gpt-4o":           (0.0025, 0.0100),
-    "gpt-4o-mini":      (0.00015, 0.00060),
-    "gpt-4-turbo":      (0.0100, 0.0300),
-    "gpt-3.5-turbo":    (0.00050, 0.00150),
+    "gpt-4o": (0.0025, 0.0100),
+    "gpt-4o-mini": (0.00015, 0.00060),
+    "gpt-4-turbo": (0.0100, 0.0300),
+    "gpt-3.5-turbo": (0.00050, 0.00150),
     # Anthropic
     "claude-3-5-sonnet-20241022": (0.0030, 0.0150),
-    "claude-3-haiku-20240307":    (0.00025, 0.00125),
+    "claude-3-haiku-20240307": (0.00025, 0.00125),
     # Google
-    "gemini-1.5-pro":   (0.00125, 0.00500),
+    "gemini-1.5-pro": (0.00125, 0.00500),
     "gemini-1.5-flash": (0.000075, 0.00030),
     # Fallback for unknown models
-    "default":          (0.002, 0.008),
+    "default": (0.002, 0.008),
 }
 
 # Default per-run budget: $0.50 USD

@@ -4,6 +4,7 @@ AURA Pydantic Schemas — Common Types.
 Shared types, response envelopes, and pagination utilities
 used across all API endpoints.
 """
+
 from __future__ import annotations
 
 from typing import Any, TypeVar

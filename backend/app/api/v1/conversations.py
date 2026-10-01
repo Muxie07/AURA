@@ -3,6 +3,7 @@ AURA API v1 — Conversations Endpoint.
 
 CRUD operations for conversation management.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -27,16 +28,17 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/conversations", tags=["Conversations"])
 
 
-
 @router.post(
     "",
     response_model=ConversationResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Create a new conversation")
+    summary="Create a new conversation",
+)
 async def create_conversation(
-    current_user: CurrentUserDep, body: ConversationCreate,
+    current_user: CurrentUserDep,
+    body: ConversationCreate,
     db: DatabaseDep,
-    request_id: RequestIDDep
+    request_id: RequestIDDep,
 ) -> ConversationResponse:
     """
     Create a new conversation thread.
@@ -49,16 +51,16 @@ async def create_conversation(
         user_id=current_user.id,
         title=body.title,
         status=ConversationStatus.ACTIVE,
-        metadata_={})
+        metadata_={},
+    )
     db.add(conversation)
     await db.flush()  # Get the ID without committing
 
     message_count = 0
     if body.initial_message:
         message = Message(
-            conversation_id=conversation.id,
-            role=MessageRole.USER,
-            content=body.initial_message)
+            conversation_id=conversation.id, role=MessageRole.USER, content=body.initial_message
+        )
         db.add(message)
         message_count = 1
 
@@ -67,7 +69,8 @@ async def create_conversation(
     logger.info(
         "conversation_created",
         conversation_id=str(conversation.id),
-        has_initial_message=bool(body.initial_message))
+        has_initial_message=bool(body.initial_message),
+    )
 
     return ConversationResponse(
         id=conversation.id,
@@ -77,21 +80,22 @@ async def create_conversation(
         status=conversation.status,
         created_at=conversation.created_at,
         updated_at=conversation.updated_at,
-        message_count=message_count)
+        message_count=message_count,
+    )
 
 
 @router.get(
-    "",
-    response_model=PaginatedResponse[ConversationResponse],
-    summary="List conversations")
+    "", response_model=PaginatedResponse[ConversationResponse], summary="List conversations"
+)
 async def list_conversations(
-    current_user: CurrentUserDep, db: DatabaseDep,
+    current_user: CurrentUserDep,
+    db: DatabaseDep,
     page: Annotated[int, Query(ge=1, description="Page number.")] = 1,
     page_size: Annotated[int, Query(ge=1, le=100, description="Items per page.")] = 20,
     status_filter: Annotated[
         ConversationStatus | None,
         Query(alias="status", description="Filter by status."),
-    ] = None
+    ] = None,
 ) -> PaginatedResponse[ConversationResponse]:
     """
     List conversations with pagination and optional status filtering.
@@ -111,16 +115,16 @@ async def list_conversations(
 
     # Fetch page
     offset = (page - 1) * page_size
-    page_query = (
-        base_query.order_by(Conversation.created_at.desc())
-        .offset(offset)
-        .limit(page_size)
-    )
+    page_query = base_query.order_by(Conversation.created_at.desc()).offset(offset).limit(page_size)
     result = await db.execute(page_query)
     # Using scalar subquery for msg_count to avoid N+1 queries
-    msg_count_subq = select(func.count(Message.id)).where(Message.conversation_id == Conversation.id).scalar_subquery()
+    msg_count_subq = (
+        select(func.count(Message.id))
+        .where(Message.conversation_id == Conversation.id)
+        .scalar_subquery()
+    )
     page_query = page_query.add_columns(msg_count_subq)
-    
+
     result = await db.execute(page_query)
     rows = result.all()
 
@@ -135,28 +139,23 @@ async def list_conversations(
                 status=conv.status,
                 created_at=conv.created_at,
                 updated_at=conv.updated_at,
-                message_count=msg_count)
+                message_count=msg_count,
+            )
         )
 
-    return PaginatedResponse.create(
-        items=items,
-        total=total,
-        page=page,
-        page_size=page_size)
+    return PaginatedResponse.create(items=items, total=total, page=page, page_size=page_size)
 
 
-@router.get(
-    "/{conversation_id}",
-    response_model=ConversationResponse,
-    summary="Get a conversation")
+@router.get("/{conversation_id}", response_model=ConversationResponse, summary="Get a conversation")
 async def get_conversation(
-    current_user: CurrentUserDep, conversation_id: uuid.UUID,
-    db: DatabaseDep) -> ConversationResponse:
+    current_user: CurrentUserDep, conversation_id: uuid.UUID, db: DatabaseDep
+) -> ConversationResponse:
     """Retrieve a single conversation by ID."""
     result = await db.execute(
         select(Conversation).where(
             Conversation.id == conversation_id,
-            Conversation.organization_id == current_user.organization_id)
+            Conversation.organization_id == current_user.organization_id,
+        )
     )
     conversation = result.scalar_one_or_none()
     if conversation is None:
@@ -175,22 +174,25 @@ async def get_conversation(
         status=conversation.status,
         created_at=conversation.created_at,
         updated_at=conversation.updated_at,
-        message_count=msg_count)
+        message_count=msg_count,
+    )
 
 
 @router.patch(
-    "/{conversation_id}",
-    response_model=ConversationResponse,
-    summary="Update a conversation")
+    "/{conversation_id}", response_model=ConversationResponse, summary="Update a conversation"
+)
 async def update_conversation(
-    current_user: CurrentUserDep, conversation_id: uuid.UUID,
+    current_user: CurrentUserDep,
+    conversation_id: uuid.UUID,
     body: ConversationUpdate,
-    db: DatabaseDep) -> ConversationResponse:
+    db: DatabaseDep,
+) -> ConversationResponse:
     """Update a conversation's title or status."""
     result = await db.execute(
         select(Conversation).where(
             Conversation.id == conversation_id,
-            Conversation.organization_id == current_user.organization_id)
+            Conversation.organization_id == current_user.organization_id,
+        )
     )
     conversation = result.scalar_one_or_none()
     if conversation is None:
@@ -217,16 +219,18 @@ async def update_conversation(
         status=conversation.status,
         created_at=conversation.created_at,
         updated_at=conversation.updated_at,
-        message_count=msg_count)
+        message_count=msg_count,
+    )
 
 
 @router.delete(
     "/{conversation_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete (archive) a conversation")
+    summary="Delete (archive) a conversation",
+)
 async def delete_conversation(
-    current_user: CurrentUserDep, conversation_id: uuid.UUID,
-    db: DatabaseDep) -> None:
+    current_user: CurrentUserDep, conversation_id: uuid.UUID, db: DatabaseDep
+) -> None:
     """
     Archive a conversation (soft delete).
 
@@ -236,7 +240,8 @@ async def delete_conversation(
     result = await db.execute(
         select(Conversation).where(
             Conversation.id == conversation_id,
-            Conversation.organization_id == current_user.organization_id)
+            Conversation.organization_id == current_user.organization_id,
+        )
     )
     conversation = result.scalar_one_or_none()
     if conversation is None:
@@ -256,18 +261,22 @@ async def delete_conversation(
 @router.get(
     "/{conversation_id}/messages",
     response_model=PaginatedResponse[MessageResponse],
-    summary="List messages in a conversation")
+    summary="List messages in a conversation",
+)
 async def list_messages(
-    current_user: CurrentUserDep, conversation_id: uuid.UUID,
+    current_user: CurrentUserDep,
+    conversation_id: uuid.UUID,
     db: DatabaseDep,
     page: Annotated[int, Query(ge=1)] = 1,
-    page_size: Annotated[int, Query(ge=1, le=100)] = 50) -> PaginatedResponse[MessageResponse]:
+    page_size: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> PaginatedResponse[MessageResponse]:
     """List all messages in a conversation, ordered chronologically."""
     # Verify conversation exists and is accessible
     conv_result = await db.execute(
         select(Conversation).where(
             Conversation.id == conversation_id,
-            Conversation.organization_id == current_user.organization_id)
+            Conversation.organization_id == current_user.organization_id,
+        )
     )
     if conv_result.scalar_one_or_none() is None:
         raise NotFoundError("Conversation", str(conversation_id))
@@ -297,31 +306,29 @@ async def list_messages(
             agent_run_id=m.agent_run_id,
             token_count=m.token_count,
             created_at=m.created_at,
-            updated_at=m.updated_at)
+            updated_at=m.updated_at,
+        )
         for m in messages
     ]
 
-    return PaginatedResponse.create(
-        items=items,
-        total=total,
-        page=page,
-        page_size=page_size)
+    return PaginatedResponse.create(items=items, total=total, page=page, page_size=page_size)
 
 
 @router.post(
     "/{conversation_id}/messages",
     response_model=MessageResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Add a message to a conversation")
+    summary="Add a message to a conversation",
+)
 async def add_message(
-    current_user: CurrentUserDep, conversation_id: uuid.UUID,
-    body: MessageCreate,
-    db: DatabaseDep) -> MessageResponse:
+    current_user: CurrentUserDep, conversation_id: uuid.UUID, body: MessageCreate, db: DatabaseDep
+) -> MessageResponse:
     """Add a message to an existing conversation."""
     conv_result = await db.execute(
         select(Conversation).where(
             Conversation.id == conversation_id,
-            Conversation.organization_id == current_user.organization_id)
+            Conversation.organization_id == current_user.organization_id,
+        )
     )
     if conv_result.scalar_one_or_none() is None:
         raise NotFoundError("Conversation", str(conversation_id))
@@ -330,7 +337,8 @@ async def add_message(
         conversation_id=conversation_id,
         role=body.role,
         content=body.content,
-        structured_content=body.structured_content)
+        structured_content=body.structured_content,
+    )
     db.add(message)
     await db.flush()
 
@@ -343,4 +351,5 @@ async def add_message(
         agent_run_id=message.agent_run_id,
         token_count=message.token_count,
         created_at=message.created_at,
-        updated_at=message.updated_at)
+        updated_at=message.updated_at,
+    )

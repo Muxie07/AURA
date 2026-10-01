@@ -10,9 +10,11 @@ class RiskLevel(StrEnum):
     WRITE = "WRITE"
     EXTERNAL_SIDE_EFFECT = "EXTERNAL_SIDE_EFFECT"
 
+
 class ToolSource(StrEnum):
     INTERNAL = "internal"
     MCP = "mcp"
+
 
 class ToolDefinition(BaseModel):
     name: str = Field(description="Unique name of the tool")
@@ -28,6 +30,7 @@ class ToolDefinition(BaseModel):
     organization_scoped: bool = Field(default=True)
     source: ToolSource = Field(default=ToolSource.INTERNAL)
 
+
 class ToolContext(BaseModel):
     organization_id: uuid.UUID
     agent_run_id: uuid.UUID
@@ -37,12 +40,14 @@ class ToolContext(BaseModel):
     user_id: uuid.UUID | None = None
     approved: bool = False
 
+
 class ToolResult(BaseModel):
     status: Literal["succeeded", "failed"]
     result: dict[str, Any] | None = None
     error_type: str | None = None
     message: str | None = None
     retryable: bool = False
+
 
 class ToolExecutionLifecycleEvent(BaseModel):
     execution_id: str

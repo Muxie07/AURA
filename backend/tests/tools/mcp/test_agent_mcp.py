@@ -12,6 +12,7 @@ from app.knowledge.rag_service import RAGService
 # Mock API Key for LLMService
 os.environ["AURA_LLM_PROVIDER"] = "mock"
 
+
 @pytest.mark.asyncio
 @pytest.mark.skip(reason="BLOCKED - ENVIRONMENT: Docker unavailable")
 async def test_agent_selects_and_executes_mcp_tool(db_session: AsyncSession, monkeypatch):
@@ -28,7 +29,7 @@ async def test_agent_selects_and_executes_mcp_tool(db_session: AsyncSession, mon
     run = AgentRun(
         conversation_id=conv.id,
         user_id=user_id,
-        user_request="Can you search for a customer named John Doe? Use the customer search tool."
+        user_request="Can you search for a customer named John Doe? Use the customer search tool.",
     )
     db_session.add(run)
     await db_session.flush()
@@ -36,6 +37,7 @@ async def test_agent_selects_and_executes_mcp_tool(db_session: AsyncSession, mon
     # Mock commit so execute_run doesn't close the test transaction
     async def mock_commit():
         await db_session.flush()
+
     db_session.commit = mock_commit  # type: ignore
 
     # Now create AgentWorkflowService and configure its MCP URL
@@ -58,4 +60,3 @@ async def test_agent_selects_and_executes_mcp_tool(db_session: AsyncSession, mon
     # but at least the execution doesn't crash from missing models! Wait, actually if MockProvider just returns a dummy string, the agent might fail planning.
 
     await service.mcp_manager.close()
-

@@ -18,6 +18,7 @@ class DummyNode(BaseNode):
     async def _execute(self, state: AgentState, **kwargs) -> AgentState:
         return state
 
+
 class ErrorNode(BaseNode):
     @property
     def name(self) -> str:
@@ -25,6 +26,7 @@ class ErrorNode(BaseNode):
 
     async def _execute(self, state: AgentState, **kwargs) -> AgentState:
         raise ValueError("Boom")
+
 
 @pytest.mark.asyncio
 async def test_agent_state_machine_valid_flow():
@@ -39,12 +41,13 @@ async def test_agent_state_machine_valid_flow():
         organization_id=uuid.uuid4(),
         user_id=uuid.uuid4(),
         conversation_id=uuid.uuid4(),
-        original_request="Test request"
+        original_request="Test request",
     )
 
     final_state = await graph.run(state)
     assert final_state.status == AgentNodeState.COMPLETED
     assert final_state.iteration_count == 2
+
 
 @pytest.mark.asyncio
 async def test_agent_state_machine_failure():
@@ -56,7 +59,7 @@ async def test_agent_state_machine_failure():
         organization_id=uuid.uuid4(),
         user_id=uuid.uuid4(),
         conversation_id=uuid.uuid4(),
-        original_request="Test request"
+        original_request="Test request",
     )
 
     final_state = await graph.run(state)
@@ -64,9 +67,11 @@ async def test_agent_state_machine_failure():
     assert len(final_state.errors) == 1
     assert "Boom" in final_state.errors[0].message
 
+
 @pytest.mark.asyncio
 async def test_agent_max_iterations():
     from app.agents.core.limits import limits
+
     original = limits.max_agent_iterations
     limits.max_agent_iterations = 3
 
@@ -82,7 +87,7 @@ async def test_agent_max_iterations():
         organization_id=uuid.uuid4(),
         user_id=uuid.uuid4(),
         conversation_id=uuid.uuid4(),
-        original_request="Test request"
+        original_request="Test request",
     )
 
     final_state = await graph.run(state)

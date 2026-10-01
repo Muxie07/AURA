@@ -17,6 +17,7 @@ from app.ai.services.llm import LLMService
 
 logger = structlog.get_logger(__name__)
 
+
 class UnderstandNode(BaseNode):
     def __init__(self, llm_service: LLMService):
         self.llm = llm_service
@@ -51,26 +52,30 @@ class UnderstandNode(BaseNode):
                     requires_structured_output=True,
                     context_length=len(system_prompt) + len(state.original_request),
                     latency_requirement="HIGH",
-                    cost_sensitivity="LOW"
+                    cost_sensitivity="LOW",
                 )
             ).model,
             messages=[
                 Message(role="system", content=system_prompt),
-                Message(role="user", content=state.original_request)
+                Message(role="user", content=state.original_request),
             ],
-            temperature=0.0
+            temperature=0.0,
         )
 
         try:
-            _, understanding = await self.llm.generate_structured(request, schema=IntentUnderstanding)
-            
+            _, understanding = await self.llm.generate_structured(
+                request, schema=IntentUnderstanding
+            )
+
             state.normalized_request = understanding.normalized_request
-            
+
             if understanding.requires_clarification:
-                state.final_response = understanding.clarification_question or "Could you please clarify your request?"
+                state.final_response = (
+                    understanding.clarification_question or "Could you please clarify your request?"
+                )
                 state.status = AgentNodeState.COMPLETED
                 return state
-                
+
             if not understanding.is_safe:
                 state.final_response = f"I cannot execute this request. {understanding.reasoning}"
                 state.status = AgentNodeState.COMPLETED
@@ -82,8 +87,9 @@ class UnderstandNode(BaseNode):
             # Fallback to basic processing if LLM fails
             state.normalized_request = state.original_request.strip()
             state.status = AgentNodeState.PLANNING
-            
+
         return state
+
 
 class PlanNode(BaseNode):
     def __init__(self, llm_service: LLMService):
@@ -114,7 +120,7 @@ class PlanNode(BaseNode):
             "- communication.create_email_draft — draft an email\n"
             "- observability.get_api_latency — retrieve real API latency, request count,\n"
             "  error rate, slowest endpoints from the live observability datastore.\n"
-            "  Parameters: {\"time_range\": \"24h\"} (required), optionally {\"endpoint_prefix\": \"/api/v1\"}\n\n"
+            '  Parameters: {"time_range": "24h"} (required), optionally {"endpoint_prefix": "/api/v1"}\n\n'
             "RULES:\n"
             "1. For ANY question about API performance, latency, response times, slow endpoints,\n"
             "   errors, request counts, system health — use 'observability.get_api_latency'.\n"
@@ -123,7 +129,8 @@ class PlanNode(BaseNode):
             "4. Keep plans minimal — 1-3 steps only."
         )
 
-        request = GenerationRequest(organization_id=state.organization_id,
+        request = GenerationRequest(
+            organization_id=state.organization_id,
             model=ModelRouter.route_task(
                 TaskProfile(
                     task_type="COMPLEX_REASONING",
@@ -131,20 +138,23 @@ class PlanNode(BaseNode):
                     requires_tools=False,
                     requires_rag=False,
                     requires_structured_output=True,
-                    context_length=len(system_prompt) + len(state.normalized_request or state.original_request),
+                    context_length=len(system_prompt)
+                    + len(state.normalized_request or state.original_request),
                     latency_requirement="LOW",
-                    cost_sensitivity="HIGH"
+                    cost_sensitivity="HIGH",
                 )
             ).model,
             messages=[
                 Message(role="system", content=system_prompt),
-                Message(role="user", content=state.normalized_request or state.original_request)
+                Message(role="user", content=state.normalized_request or state.original_request),
             ],
-            temperature=0.0
+            temperature=0.0,
         )
 
         try:
-            _result, parsed_plan = await self.llm.generate_structured(request, schema=StructuredAgentPlan)
+            _result, parsed_plan = await self.llm.generate_structured(
+                request, schema=StructuredAgentPlan
+            )
 
             # Map to core domain model
             steps = [
@@ -156,8 +166,9 @@ class PlanNode(BaseNode):
                     required_tools=s.required_tools,
                     risk=s.risk,
                     expected_output=s.expected_output,
-                    verification_criteria=s.verification_criteria
-                ) for s in parsed_plan.steps
+                    verification_criteria=s.verification_criteria,
+                )
+                for s in parsed_plan.steps
             ]
             state.plan = AgentPlan(goal=parsed_plan.goal, steps=steps)
 
@@ -166,7 +177,7 @@ class PlanNode(BaseNode):
         except Exception as e:
             logger.error("planner_failed", error=str(e), run_id=str(state.run_id))
             from app.ai.errors.exceptions import LLMQuotaExceededError
-            
+
             # Safe recovery path: continue without tools if structured planning fails
             # We treat quota exhaustion as a planning failure that can be recovered from
             # if we just want to chat, or fail if we prefer. But actually, if LLMService
@@ -177,8 +188,9 @@ class PlanNode(BaseNode):
                 state.status = AgentNodeState.FAILED
             else:
                 logger.warning("planner_safe_recovery", error=str(e), run_id=str(state.run_id))
-                state.plan = AgentPlan(goal="Respond to user without tools due to planning failure.", steps=[])
+                state.plan = AgentPlan(
+                    goal="Respond to user without tools due to planning failure.", steps=[]
+                )
                 state.status = AgentNodeState.RETRIEVING
-
 
         return state

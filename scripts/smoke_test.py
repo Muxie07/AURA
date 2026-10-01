@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-import urllib.request
-import urllib.error
 import socket
 import sys
+import urllib.error
+import urllib.request
+
 
 def check_endpoint(url, expected_status=200):
     print(f"Checking {url} ... ", end="")
@@ -26,6 +27,7 @@ def check_endpoint(url, expected_status=200):
         print(f"FAIL ({e})")
         return False
 
+
 def check_socket(host, port):
     print(f"Checking socket {host}:{port} ... ", end="")
     try:
@@ -36,26 +38,27 @@ def check_socket(host, port):
         print(f"FAIL ({e})")
         return False
 
+
 def main():
     print("Starting AURA deployment smoke test...")
     success = True
-    
+
     # 1. Check frontend
     if not check_endpoint("http://localhost:3000/"):
         success = False
-        
+
     # 2. Check backend health
     if not check_endpoint("http://localhost:8000/health"):
         success = False
-        
+
     # 3. Check postgres port
     if not check_socket("localhost", 5432):
         success = False
-        
+
     # 4. Check redis port
     if not check_socket("localhost", 6379):
         success = False
-        
+
     if success:
         print("\nAll smoke tests PASSED.")
         sys.exit(0)
@@ -63,6 +66,6 @@ def main():
         print("\nSmoke tests FAILED.")
         sys.exit(1)
 
+
 if __name__ == "__main__":
     main()
-

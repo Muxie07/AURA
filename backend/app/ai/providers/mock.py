@@ -11,6 +11,7 @@ from app.ai.schemas.usage import Usage
 
 T = TypeVar("T", bound=BaseModel)
 
+
 class MockLLMProvider(LLMProvider):
     """Deterministic mock provider for testing."""
 
@@ -34,7 +35,7 @@ class MockLLMProvider(LLMProvider):
             provider=self.name,
             usage=Usage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
             finish_reason="stop",
-            raw_response={"mocked": True}
+            raw_response={"mocked": True},
         )
 
     async def generate_structured(
@@ -53,7 +54,7 @@ class MockLLMProvider(LLMProvider):
                     {
                         "action_id": "step_1",
                         "arguments": {"query": "John Doe"},
-                        "reasoning": "Search for the customer"
+                        "reasoning": "Search for the customer",
                     }
                 ]
             }
@@ -70,15 +71,15 @@ class MockLLMProvider(LLMProvider):
                         "risk": "LOW",
                         "expected_output": "Customer details",
                         "verification_criteria": "None",
-                        "status": "pending"
+                        "status": "pending",
                     }
-                ]
+                ],
             }
         elif schema.__name__ == "AgentRunSummary":
             mock_data = {
                 "plan": {"goal": "Tell a short joke", "steps": []},
                 "iterations": 1,
-                "tool_calls_made": 0
+                "tool_calls_made": 0,
             }
 
         parsed = schema.model_validate(mock_data)
@@ -90,7 +91,7 @@ class MockLLMProvider(LLMProvider):
             provider=self.name,
             usage=Usage(prompt_tokens=20, completion_tokens=10, total_tokens=30),
             finish_reason="stop",
-            raw_response={"mocked": True}
+            raw_response={"mocked": True},
         )
         return result, parsed
 

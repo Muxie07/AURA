@@ -1,4 +1,4 @@
-﻿import pytest
+import pytest
 from httpx import AsyncClient
 
 
@@ -11,6 +11,7 @@ async def test_global_exception_handler(client: AsyncClient):
     assert response.status_code == 404
     data = response.json()
     assert "error" in data or "detail" in data
+
 
 @pytest.mark.asyncio
 async def test_llm_timeout_mock():

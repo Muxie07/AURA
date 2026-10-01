@@ -4,6 +4,7 @@ AURA Tests — Health Endpoints.
 Tests the /health and /ping endpoints for correct responses,
 database connectivity checks, and proper status code behavior.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

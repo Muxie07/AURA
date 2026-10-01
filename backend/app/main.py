@@ -10,6 +10,7 @@ Architecture:
 - Layered middleware (outermost = first to execute)
 - Centralized exception handler registration
 """
+
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -58,6 +59,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     import alembic.command
     import alembic.config
+
     logger.info("Running database migrations...")
     alembic_cfg = alembic.config.Config("alembic.ini")
     await asyncio.to_thread(alembic.command.upgrade, alembic_cfg, "head")
@@ -69,6 +71,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     from app.database.base import get_session_factory
     from app.database.models import AgentRun, AgentRunStatus
+
     try:
         SessionFactory = get_session_factory()
         async with SessionFactory() as db:
@@ -78,7 +81,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 .values(
                     status=AgentRunStatus.FAILED,
                     error_message="Server crashed during execution",
-                    completed_at=sa.func.now()
+                    completed_at=sa.func.now(),
                 )
             )
             await db.commit()
@@ -88,9 +91,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Check Redis connectivity
     import redis.asyncio as aioredis
+
     try:
         redis_client = aioredis.from_url(settings.redis_url)
-        await redis_client.ping() # type: ignore[misc]
+        await redis_client.ping()  # type: ignore[misc]
         await redis_client.aclose()
     except Exception as exc:
         logger.error("Redis connection failed.", error=str(exc))
@@ -164,8 +168,9 @@ def create_app() -> FastAPI:
     from app.api.v1.router import api_v1_router
 
     app.include_router(api_v1_router)
-    
+
     from app.tools.mcp.routes import asgi_sse
+
     app.mount("/api/v1/mcp", asgi_sse)
 
     # Root liveness probe (no auth, no DB) — used by load balancers

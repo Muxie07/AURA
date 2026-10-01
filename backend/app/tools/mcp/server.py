@@ -21,6 +21,7 @@ mcp_server = Server("aura-business-mcp")
 mcp_org_id: ContextVar[uuid.UUID] = ContextVar("mcp_org_id")
 mcp_permissions: ContextVar[list[str]] = ContextVar("mcp_permissions")
 
+
 @mcp_server.list_tools()
 async def list_tools() -> list[Tool]:
     tools = []
@@ -31,14 +32,9 @@ async def list_tools() -> list[Tool]:
             schema = dict(defn.input_schema)
             if "properties" in schema and "__aura_context" in schema["properties"]:
                 del schema["properties"]["__aura_context"]
-            tools.append(
-                Tool(
-                    name=defn.name,
-                    description=defn.description,
-                    inputSchema=schema
-                )
-            )
+            tools.append(Tool(name=defn.name, description=defn.description, inputSchema=schema))
     return tools
+
 
 @mcp_server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
@@ -53,7 +49,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         org_id = mcp_org_id.get()
         perms = mcp_permissions.get()
     except LookupError:
-        return [TextContent(type="text", text="Error: Unauthenticated. Missing organization context.")]
+        return [
+            TextContent(type="text", text="Error: Unauthenticated. Missing organization context.")
+        ]
 
     try:
         tool_executor = mcp_registry.get(name)
@@ -62,11 +60,23 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     risk = tool_executor.definition.risk_level
     if risk == RiskLevel.READ and "tools:read" not in perms:
-        return [TextContent(type="text", text="Error: ToolAuthorizationError: Missing tools:read permission")]
+        return [
+            TextContent(
+                type="text", text="Error: ToolAuthorizationError: Missing tools:read permission"
+            )
+        ]
     elif risk == RiskLevel.WRITE and "tools:write" not in perms:
-        return [TextContent(type="text", text="Error: ToolAuthorizationError: Missing tools:write permission")]
+        return [
+            TextContent(
+                type="text", text="Error: ToolAuthorizationError: Missing tools:write permission"
+            )
+        ]
     elif risk == RiskLevel.EXTERNAL_SIDE_EFFECT and "tools:external" not in perms:
-        return [TextContent(type="text", text="Error: ToolAuthorizationError: Missing tools:external permission")]
+        return [
+            TextContent(
+                type="text", text="Error: ToolAuthorizationError: Missing tools:external permission"
+            )
+        ]
 
     context = ToolContext(
         organization_id=org_id,
@@ -74,7 +84,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         execution_id=uuid.uuid4().hex,
         dry_run=arguments.pop("_dry_run", False),
         idempotency_key=arguments.pop("_idempotency_key", None),
-        approved=arguments.pop("_approved", False)
+        approved=arguments.pop("_approved", False),
     )
 
     from app.policy.engine import PolicyEngine
@@ -86,18 +96,17 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         tool_name=name,
         risk_level=risk,
         arguments=arguments,
-        permissions=perms
+        permissions=perms,
     )
 
     policy_decision = PolicyEngine.evaluate(policy_ctx)
     if policy_decision.decision == PolicyDecision.DENY:
-        return [TextContent(type='text', text=f'Error: Policy Denied: {policy_decision.reason}')]
+        return [TextContent(type="text", text=f"Error: Policy Denied: {policy_decision.reason}")]
     if policy_decision.decision == PolicyDecision.REQUIRE_APPROVAL:
-        return [TextContent(type='text', text=f'Error: REQUIRE_APPROVAL: {policy_decision.reason}')]
+        return [TextContent(type="text", text=f"Error: REQUIRE_APPROVAL: {policy_decision.reason}")]
 
     result = await mcp_registry.execute(name, arguments, context)
     if result.status == "failed":
         return [TextContent(type="text", text=f"Error: {result.message}")]
 
     return [TextContent(type="text", text=json.dumps(result.result))]
-

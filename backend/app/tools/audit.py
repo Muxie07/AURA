@@ -12,11 +12,15 @@ from app.tools.schemas import ToolContext, ToolDefinition, ToolResult
 async def check_idempotency_key(
     db: AsyncSession, organization_id: uuid.UUID, idempotency_key: str
 ) -> ToolExecutionAudit | None:
-    stmt = select(ToolExecutionAudit).where(
-        ToolExecutionAudit.organization_id == organization_id,
-        ToolExecutionAudit.idempotency_key == idempotency_key,
-        ToolExecutionAudit.status == "succeeded"
-    ).limit(1)
+    stmt = (
+        select(ToolExecutionAudit)
+        .where(
+            ToolExecutionAudit.organization_id == organization_id,
+            ToolExecutionAudit.idempotency_key == idempotency_key,
+            ToolExecutionAudit.status == "succeeded",
+        )
+        .limit(1)
+    )
     result = await db.execute(stmt)
     return result.scalars().first()
 
@@ -30,7 +34,7 @@ async def persist_tool_audit(
     completed_at: datetime,
     duration_ms: int,
     result: ToolResult,
-    input_hash: str
+    input_hash: str,
 ) -> None:
     """Persist the tool execution to the database."""
 
@@ -52,7 +56,9 @@ async def persist_tool_audit(
         retry_count=0,
         error_type=result.error_type,
         error_code=None,
-        result_summary=str(result.message) if result.message else ("Success" if result.status == "succeeded" else "Failed")
+        result_summary=str(result.message)
+        if result.message
+        else ("Success" if result.status == "succeeded" else "Failed"),
     )
     db.add(audit)
     await db.commit()

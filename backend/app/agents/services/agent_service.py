@@ -22,6 +22,7 @@ from app.tools.registry import ToolRegistry
 
 logger = structlog.get_logger(__name__)
 
+
 class AgentWorkflowService:
     def __init__(self, db: AsyncSession, llm: LLMService, rag: RAGService):
         self.db = db
@@ -33,13 +34,12 @@ class AgentWorkflowService:
 
         self.graph = self._build_graph()
 
-
     async def initialize(self, organization_id: uuid.UUID):
         import os
 
         from app.tools.mcp.client import MCPClientManager, discover_mcp_tools
 
-        mcp_url = os.environ.get('MCP_SERVER_URL', 'http://localhost:8000/api/v1/mcp/')
+        mcp_url = os.environ.get("MCP_SERVER_URL", "http://localhost:8000/api/v1/mcp/")
         self.mcp_manager = MCPClientManager(mcp_url, organization_id)
         await self.mcp_manager.connect()
         if self.mcp_manager.session:
@@ -82,9 +82,7 @@ class AgentWorkflowService:
 
     async def execute_run(self, run_id: uuid.UUID) -> AgentState:
         # Load run
-        result = await self.db.execute(
-            sa.select(AgentRun).where(AgentRun.id == run_id)
-        )
+        result = await self.db.execute(sa.select(AgentRun).where(AgentRun.id == run_id))
         run = result.scalar_one_or_none()
         if not run:
             raise ValueError(f"AgentRun {run_id} not found")
@@ -102,20 +100,26 @@ class AgentWorkflowService:
             user_id=run.user_id,
             conversation_id=run.conversation_id,
             original_request=run.user_request,
-            status=AgentNodeState.CREATED
+            status=AgentNodeState.CREATED,
         )
 
         tracer = AgentTracer(db=self.db, run_id=run.id, organization_id=org_id)
         import asyncio
 
         from app.config.settings import get_settings
+
         settings = get_settings()
 
         try:
             # Execute Graph
             state = await asyncio.wait_for(
-                self.graph.run(state, tracer=tracer, db=self.db, permissions=['tools:read', 'tools:write', 'tools:external']),
-                timeout=settings.aura_agent_timeout_seconds
+                self.graph.run(
+                    state,
+                    tracer=tracer,
+                    db=self.db,
+                    permissions=["tools:read", "tools:write", "tools:external"],
+                ),
+                timeout=settings.aura_agent_timeout_seconds,
             )
 
             # Persist back
@@ -145,16 +149,20 @@ class AgentWorkflowService:
                     conversation_id=run.conversation_id,
                     role=MessageRole.ASSISTANT,
                     content=run.final_response,
-                    agent_run_id=run.id
+                    agent_run_id=run.id,
                 )
                 self.db.add(assistant_msg)
             elif run.status == AgentRunStatus.FAILED:
-                msg_content = run.error_message if run.error_message and run.error_message.startswith("AURA") else f"AURA encountered an error: {run.error_message}"
+                msg_content = (
+                    run.error_message
+                    if run.error_message and run.error_message.startswith("AURA")
+                    else f"AURA encountered an error: {run.error_message}"
+                )
                 assistant_msg = Message(
                     conversation_id=run.conversation_id,
                     role=MessageRole.ASSISTANT,
                     content=msg_content,
-                    agent_run_id=run.id
+                    agent_run_id=run.id,
                 )
                 self.db.add(assistant_msg)
 
@@ -167,18 +175,18 @@ class AgentWorkflowService:
             run.status = AgentRunStatus.FAILED
             run.error_message = f"Critical engine failure: {e}"
             run.completed_at = datetime.now(UTC)
-            
+
             assistant_msg = Message(
                 conversation_id=run.conversation_id,
                 role=MessageRole.ASSISTANT,
                 content=f"AURA encountered a critical error during execution: {e}",
-                agent_run_id=run.id
+                agent_run_id=run.id,
             )
             self.db.add(assistant_msg)
-            
+
             await self.db.commit()
             raise
 
     async def aclose(self):
-        if hasattr(self, 'mcp_manager'):
+        if hasattr(self, "mcp_manager"):
             await self.mcp_manager.close()

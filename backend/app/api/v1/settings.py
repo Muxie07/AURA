@@ -1,4 +1,5 @@
 from typing import Any
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -14,9 +15,13 @@ class SettingsUpdate(BaseModel):
 
 
 @router.get("")
-async def get_settings(current_user: CurrentUserDep, db: DatabaseDep, app_settings: SettingsDep) -> dict[str, Any]:
+async def get_settings(
+    current_user: CurrentUserDep, db: DatabaseDep, app_settings: SettingsDep
+) -> dict[str, Any]:
     # Merge Environment settings with Organization Database settings
-    result = await db.execute(select(Organization).where(Organization.id == current_user.organization_id))
+    result = await db.execute(
+        select(Organization).where(Organization.id == current_user.organization_id)
+    )
     org = result.scalar_one_or_none()
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
@@ -44,8 +49,12 @@ async def get_settings(current_user: CurrentUserDep, db: DatabaseDep, app_settin
 
 
 @router.patch("")
-async def update_settings(req: SettingsUpdate, current_user: CurrentUserDep, db: DatabaseDep) -> dict[str, Any]:
-    result = await db.execute(select(Organization).where(Organization.id == current_user.organization_id))
+async def update_settings(
+    req: SettingsUpdate, current_user: CurrentUserDep, db: DatabaseDep
+) -> dict[str, Any]:
+    result = await db.execute(
+        select(Organization).where(Organization.id == current_user.organization_id)
+    )
     org = result.scalar_one_or_none()
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")

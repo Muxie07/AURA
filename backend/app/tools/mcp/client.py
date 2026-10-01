@@ -27,10 +27,14 @@ class MCPToolExecutor(BaseToolExecutor):
             # We call the real MCP tool name, NOT the prefixed one
             result = await self.session.call_tool(self.mcp_name, arguments=arguments)
             if not result.content:
-                return ToolResult(status="failed", message="No content returned from MCP", retryable=False)
+                return ToolResult(
+                    status="failed", message="No content returned from MCP", retryable=False
+                )
 
             if not hasattr(result.content[0], "text"):
-                return ToolResult(status="failed", message="MCP returned non-text content", retryable=False)
+                return ToolResult(
+                    status="failed", message="MCP returned non-text content", retryable=False
+                )
             text = result.content[0].text
             if text.startswith("Error:"):
                 return ToolResult(status="failed", message=text, retryable=False)
@@ -54,7 +58,7 @@ async def discover_mcp_tools(session: ClientSession) -> list[BaseToolExecutor]:
             description=tool.description or "",
             input_schema=tool.inputSchema,
             risk_level=risk,
-            source=ToolSource.MCP
+            source=ToolSource.MCP,
         )
         # Pass the original tool name to the executor
         executors.append(MCPToolExecutor(defn, session, tool.name))
@@ -75,6 +79,7 @@ class MCPClientManager:
         import jwt
 
         from app.config.settings import get_settings
+
         settings = get_settings()
 
         # Create a valid service token for MCP
@@ -82,20 +87,22 @@ class MCPClientManager:
             "sub": "mcp-service",
             "org_id": self.organization_id,
             "permissions": ["tools:read", "tools:write", "tools:external"],
-            "exp": datetime.utcnow() + timedelta(minutes=10)
+            "exp": datetime.utcnow() + timedelta(minutes=10),
         }
         token = jwt.encode(payload, settings.aura_secret_key.get_secret_value(), algorithm="HS256")
 
         headers = {
             "Authorization": f"Bearer {token}",
             "X-Organization-Id": self.organization_id,
-            "X-MCP-Permissions": "tools:read,tools:write,tools:external"
+            "X-MCP-Permissions": "tools:read,tools:write,tools:external",
         }
 
         transport = await self.exit_stack.enter_async_context(
             sse_client(self.url, headers=headers, timeout=30.0)
         )
-        self.session = await self.exit_stack.enter_async_context(ClientSession(transport[0], transport[1]))
+        self.session = await self.exit_stack.enter_async_context(
+            ClientSession(transport[0], transport[1])
+        )
         await self.session.initialize()
 
     async def close(self):

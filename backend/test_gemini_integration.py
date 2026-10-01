@@ -1,6 +1,7 @@
+import asyncio
 import os
 import sys
-import asyncio
+
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
@@ -11,9 +12,11 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 from app.ai.providers.google import GeminiProvider
 from app.ai.schemas.generation import GenerationRequest, Message
 
+
 class MySchema(BaseModel):
     status: str
     message: str
+
 
 async def main():
     try:
@@ -28,9 +31,9 @@ async def main():
     req = GenerationRequest(
         model="gemini-3.6-flash",
         messages=[Message(role="user", content="Say 'Hello, World!'")],
-        temperature=0.0
+        temperature=0.0,
     )
-    
+
     try:
         print("Testing generate()...")
         res = await provider.generate(req)
@@ -44,7 +47,9 @@ async def main():
     try:
         print("\nTesting generate_structured()...")
         res, structured_res = await provider.generate_structured(req, MySchema)
-        print(f"Structured Generation Success: status={structured_res.status}, message={structured_res.message}")
+        print(
+            f"Structured Generation Success: status={structured_res.status}, message={structured_res.message}"
+        )
     except Exception as e:
         print(f"Structured Generate Failed: {type(e).__name__} - {e}")
         if "quota" in str(e).lower() or "429" in str(e):
@@ -60,6 +65,7 @@ async def main():
         await provider.generate(req_bad)
     except Exception as e:
         print(f"Error handling verified. Caught exception: {type(e).__name__} - {e}")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

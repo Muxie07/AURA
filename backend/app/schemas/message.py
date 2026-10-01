@@ -1,6 +1,7 @@
 """
 AURA Pydantic Schemas — Message.
 """
+
 from __future__ import annotations
 
 import uuid

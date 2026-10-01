@@ -12,6 +12,7 @@ from app.knowledge.storage import FileStorage
 
 logger = structlog.get_logger(__name__)
 
+
 class DocumentIngestionService:
     """Orchestrates document ingestion, parsing, chunking, and embedding."""
 
@@ -27,6 +28,7 @@ class DocumentIngestionService:
         # Default settings, can be overridden by config
         self.chunker = DocumentChunker()
         from app.config.settings import get_settings
+
         self.embedding_model = get_settings().embedding_model
 
     async def ingest_document(
@@ -45,9 +47,7 @@ class DocumentIngestionService:
         5. Save chunks to DB
         """
         # Fetch document
-        result = await self.db.execute(
-            sa.select(Document).where(Document.id == document_id)
-        )
+        result = await self.db.execute(sa.select(Document).where(Document.id == document_id))
         document = result.scalar_one_or_none()
         if not document:
             logger.error("document_not_found", document_id=str(document_id))
@@ -75,7 +75,7 @@ class DocumentIngestionService:
             base_meta = {
                 "source": filename,
                 "document_id": str(document.id),
-                "knowledge_base_id": str(document.knowledge_base_id)
+                "knowledge_base_id": str(document.knowledge_base_id),
             }
             if "pages" in parsed_metadata:
                 base_meta["pages"] = parsed_metadata["pages"]
@@ -88,7 +88,7 @@ class DocumentIngestionService:
             # 4. Embed (batching for large documents)
             batch_size = 100
             for i in range(0, len(chunks_data), batch_size):
-                batch = chunks_data[i:i+batch_size]
+                batch = chunks_data[i : i + batch_size]
                 texts = [c["content"] for c in batch]
 
                 # Use embed API from LLMService
@@ -104,7 +104,7 @@ class DocumentIngestionService:
                         content=chunk["content"],
                         metadata_=chunk["metadata"],
                         embedding=embeddings[j],
-                        token_count=len(chunk["content"]) // 4 # Rough approximation
+                        token_count=len(chunk["content"]) // 4,  # Rough approximation
                     )
                     self.db.add(doc_chunk)
 
@@ -112,7 +112,9 @@ class DocumentIngestionService:
 
             document.status = DocumentStatus.READY
             await self.db.commit()
-            logger.info("document_ingestion_complete", document_id=str(document.id), chunks=len(chunks_data))
+            logger.info(
+                "document_ingestion_complete", document_id=str(document.id), chunks=len(chunks_data)
+            )
 
         except Exception as e:
             logger.error("document_ingestion_failed", document_id=str(document_id), error=str(e))

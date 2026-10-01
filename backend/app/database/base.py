@@ -7,6 +7,7 @@ Provides:
 - Dependency injection helper for FastAPI
 - Base model class with common columns
 """
+
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator

@@ -4,6 +4,7 @@ AURA Phase 9 — Ops Metrics Collector.
 Aggregates AI Operations metrics for the observability dashboard.
 All aggregations are tenant-isolated. No cross-org data leakage.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -48,8 +49,7 @@ class OpsMetricsCollector:
             metrics.successful_runs = run_stats.get("success", 0)
             metrics.failed_runs = run_stats.get("failed", 0)
             metrics.success_rate = (
-                metrics.successful_runs / metrics.total_runs
-                if metrics.total_runs > 0 else 0.0
+                metrics.successful_runs / metrics.total_runs if metrics.total_runs > 0 else 0.0
             )
             metrics.avg_latency_ms = run_stats.get("avg_latency_ms", 0.0)
             metrics.total_tokens = run_stats.get("total_tokens", 0)
@@ -86,10 +86,13 @@ class OpsMetricsCollector:
                 WHERE organization_id = :org_id
                   AND started_at >= NOW() - INTERVAL ':hours hours'
             """)
-            result = await self.db.execute(stmt, {
-                "org_id": str(organization_id),
-                "hours": window_hours,
-            })
+            result = await self.db.execute(
+                stmt,
+                {
+                    "org_id": str(organization_id),
+                    "hours": window_hours,
+                },
+            )
             row = result.fetchone()
             if row:
                 return {
@@ -118,10 +121,13 @@ class OpsMetricsCollector:
                 ORDER BY usage_count DESC
                 LIMIT 20
             """)
-            result = await self.db.execute(stmt, {
-                "org_id": str(organization_id),
-                "hours": window_hours,
-            })
+            result = await self.db.execute(
+                stmt,
+                {
+                    "org_id": str(organization_id),
+                    "hours": window_hours,
+                },
+            )
             return {row[0]: int(row[1]) for row in result.fetchall()}
         except Exception as e:
             logger.debug("tool_usage_query_failed", error=str(e))
@@ -141,10 +147,13 @@ class OpsMetricsCollector:
                 WHERE r.organization_id = :org_id
                   AND ar.created_at >= NOW() - INTERVAL ':hours hours'
             """)
-            result = await self.db.execute(stmt, {
-                "org_id": str(organization_id),
-                "hours": window_hours,
-            })
+            result = await self.db.execute(
+                stmt,
+                {
+                    "org_id": str(organization_id),
+                    "hours": window_hours,
+                },
+            )
             row = result.fetchone()
             if row:
                 return {"pending": int(row[0] or 0), "denied": int(row[1] or 0)}

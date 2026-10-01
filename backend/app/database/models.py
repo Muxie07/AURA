@@ -10,6 +10,7 @@ Design decisions:
 - JSON columns for flexible metadata storage
 - pgvector-ready (embeddings column defined but populated in Phase 5)
 """
+
 from __future__ import annotations
 
 import uuid
@@ -45,7 +46,6 @@ from app.database.base import Base
 # ---------------------------------------------------------------------------
 _UUID_TYPE = sa.Uuid(as_uuid=True)
 _JSON_TYPE = sa.JSON
-
 
 
 # =============================================================================
@@ -195,8 +195,7 @@ class Organization(Base):
         cascade="all, delete-orphan",
     )
 
-    __table_args__ = (
-    )
+    __table_args__ = ()
 
 
 class User(Base):
@@ -257,9 +256,7 @@ class User(Base):
         back_populates="user",
     )
 
-    __table_args__ = (
-        UniqueConstraint("organization_id", "email", name="uq_users_org_email"),
-    )
+    __table_args__ = (UniqueConstraint("organization_id", "email", name="uq_users_org_email"),)
 
 
 class Conversation(Base):
@@ -291,7 +288,12 @@ class Conversation(Base):
         doc="Auto-generated or user-provided conversation title.",
     )
     status: Mapped[ConversationStatus] = mapped_column(
-        SAEnum(ConversationStatus, name="conversation_status_enum", native_enum=False, values_callable=lambda x: [e.value for e in x]),
+        SAEnum(
+            ConversationStatus,
+            name="conversation_status_enum",
+            native_enum=False,
+            values_callable=lambda x: [e.value for e in x],
+        ),
         default=ConversationStatus.ACTIVE,
         nullable=False,
         index=True,
@@ -322,8 +324,7 @@ class Conversation(Base):
         order_by="AgentRun.created_at",
     )
 
-    __table_args__ = (
-    )
+    __table_args__ = ()
 
 
 class Message(Base):
@@ -343,7 +344,12 @@ class Message(Base):
         index=True,
     )
     role: Mapped[MessageRole] = mapped_column(
-        SAEnum(MessageRole, name="message_role_enum", native_enum=False, values_callable=lambda x: [e.value for e in x]),
+        SAEnum(
+            MessageRole,
+            name="message_role_enum",
+            native_enum=False,
+            values_callable=lambda x: [e.value for e in x],
+        ),
         nullable=False,
     )
     content: Mapped[str] = mapped_column(
@@ -374,8 +380,7 @@ class Message(Base):
     conversation: Mapped[Conversation] = relationship("Conversation", back_populates="messages")
     agent_run: Mapped[AgentRun | None] = relationship("AgentRun", back_populates="messages")
 
-    __table_args__ = (
-    )
+    __table_args__ = ()
 
 
 class AgentRun(Base):
@@ -404,7 +409,12 @@ class AgentRun(Base):
 
     # Status & Lifecycle
     status: Mapped[AgentRunStatus] = mapped_column(
-        SAEnum(AgentRunStatus, name="agent_run_status_enum", native_enum=False, values_callable=lambda x: [e.value for e in x]),
+        SAEnum(
+            AgentRunStatus,
+            name="agent_run_status_enum",
+            native_enum=False,
+            values_callable=lambda x: [e.value for e in x],
+        ),
         default=AgentRunStatus.PENDING,
         nullable=False,
         index=True,
@@ -481,8 +491,7 @@ class AgentRun(Base):
         back_populates="agent_run",
     )
 
-    __table_args__ = (
-    )
+    __table_args__ = ()
 
 
 class ToolCall(Base):
@@ -508,7 +517,12 @@ class ToolCall(Base):
 
     # Execution
     status: Mapped[ToolCallStatus] = mapped_column(
-        SAEnum(ToolCallStatus, name="tool_call_status_enum", native_enum=False, values_callable=lambda x: [e.value for e in x]),
+        SAEnum(
+            ToolCallStatus,
+            name="tool_call_status_enum",
+            native_enum=False,
+            values_callable=lambda x: [e.value for e in x],
+        ),
         default=ToolCallStatus.PENDING,
         nullable=False,
         index=True,
@@ -553,8 +567,7 @@ class ToolCall(Base):
         foreign_keys=[approval_id],
     )
 
-    __table_args__ = (
-    )
+    __table_args__ = ()
 
 
 class ApprovalRequest(Base):
@@ -597,7 +610,12 @@ class ApprovalRequest(Base):
 
     # Status
     status: Mapped[ApprovalStatus] = mapped_column(
-        SAEnum(ApprovalStatus, name="approval_status_enum", native_enum=False, values_callable=lambda x: [e.value for e in x]),
+        SAEnum(
+            ApprovalStatus,
+            name="approval_status_enum",
+            native_enum=False,
+            values_callable=lambda x: [e.value for e in x],
+        ),
         default=ApprovalStatus.PENDING,
         nullable=False,
         index=True,
@@ -620,8 +638,7 @@ class ApprovalRequest(Base):
     actioned_by: Mapped[User | None] = relationship("User", foreign_keys=[actioned_by_id])
     organization: Mapped[Organization] = relationship("Organization")
 
-    __table_args__ = (
-    )
+    __table_args__ = ()
 
 
 class AuditEvent(Base):
@@ -656,7 +673,12 @@ class AuditEvent(Base):
 
     # Event classification
     event_type: Mapped[AuditEventType] = mapped_column(
-        SAEnum(AuditEventType, name="audit_event_type_enum", native_enum=False, values_callable=lambda x: [e.value for e in x]),
+        SAEnum(
+            AuditEventType,
+            name="audit_event_type_enum",
+            native_enum=False,
+            values_callable=lambda x: [e.value for e in x],
+        ),
         nullable=False,
         index=True,
     )
@@ -684,19 +706,20 @@ class AuditEvent(Base):
     user: Mapped[User | None] = relationship("User", back_populates="audit_events")
     agent_run: Mapped[AgentRun | None] = relationship("AgentRun", back_populates="audit_events")
 
-    __table_args__ = (
-    )
+    __table_args__ = ()
 
 
 # =============================================================================
 # Knowledge Management (Phase 3)
 # =============================================================================
 
+
 class DocumentStatus(StrEnum):
     UPLOADED = "uploaded"
     PROCESSING = "processing"
     READY = "ready"
     FAILED = "failed"
+
 
 class KnowledgeBase(Base):
     __tablename__ = "knowledge_bases"
@@ -707,7 +730,9 @@ class KnowledgeBase(Base):
     )
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), server_default=sa.func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=sa.func.now()
+    )
     updated_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), server_default=sa.func.now(), onupdate=sa.func.now()
     )
@@ -717,6 +742,7 @@ class KnowledgeBase(Base):
     documents: Mapped[list[Document]] = relationship(
         back_populates="knowledge_base", cascade="all, delete-orphan"
     )
+
 
 class Document(Base):
     __tablename__ = "documents"
@@ -744,7 +770,9 @@ class Document(Base):
 
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", _JSON_TYPE, default=dict)
 
-    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), server_default=sa.func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=sa.func.now()
+    )
     updated_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), server_default=sa.func.now(), onupdate=sa.func.now()
     )
@@ -754,6 +782,7 @@ class Document(Base):
     chunks: Mapped[list[DocumentChunk]] = relationship(
         back_populates="document", cascade="all, delete-orphan"
     )
+
 
 class DocumentChunk(Base):
     __tablename__ = "document_chunks"
@@ -776,17 +805,24 @@ class DocumentChunk(Base):
     embedding_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
     embedding_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), server_default=sa.func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=sa.func.now()
+    )
 
     # Relationships
     document: Mapped[Document] = relationship(back_populates="chunks")
+
 
 class ToolExecutionAudit(Base):
     __tablename__ = "tool_execution_audits"
 
     id: Mapped[uuid.UUID] = mapped_column(_UUID_TYPE, primary_key=True, default=uuid.uuid4)
-    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
-    agent_run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    agent_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True
+    )
     execution_id: Mapped[str] = mapped_column(String(100), index=True)
     tool_name: Mapped[str] = mapped_column(String(255), index=True)
     tool_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
@@ -817,7 +853,9 @@ class AgentTraceEvent(Base):
     sequence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     event_type: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     component: Mapped[str] = mapped_column(String(100), nullable=False)
-    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     metadata_: Mapped[dict[str, Any] | None] = mapped_column(
         "metadata",
@@ -825,126 +863,183 @@ class AgentTraceEvent(Base):
         nullable=True,
     )
 
+
 class MemoryScope(StrEnum):
     RUN = "run"
     CONVERSATION = "conversation"
     ORGANIZATION = "organization"
 
+
 class AgentMemory(Base):
     __tablename__ = "agent_memories"
 
     id: Mapped[uuid.UUID] = mapped_column(_UUID_TYPE, primary_key=True, default=uuid.uuid4)
-    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
-    conversation_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"), nullable=True, index=True)
-    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=True, index=True)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    conversation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=True, index=True
+    )
 
-    scope: Mapped[MemoryScope] = mapped_column(SAEnum(MemoryScope, native_enum=False, values_callable=lambda x: [e.value for e in x]), nullable=False, index=True)
+    scope: Mapped[MemoryScope] = mapped_column(
+        SAEnum(MemoryScope, native_enum=False, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+        index=True,
+    )
     key: Mapped[str] = mapped_column(String(255), index=True)
     content: Mapped[dict[str, Any]] = mapped_column(_JSON_TYPE, default=dict)
 
-    expires_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
 
 
 class EvalDataset(Base):
     __tablename__ = "eval_datasets"
 
     id: Mapped[uuid.UUID] = mapped_column(_UUID_TYPE, primary_key=True, default=uuid.uuid4)
-    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     category: Mapped[str] = mapped_column(String(100), index=True)
     version: Mapped[int] = mapped_column(Integer, default=1)
-    
-    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), server_default=sa.func.now())
-    updated_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), server_default=sa.func.now(), onupdate=sa.func.now())
 
-    examples: Mapped[list["EvalExample"]] = relationship(back_populates="dataset", cascade="all, delete-orphan")
-    runs: Mapped[list["EvalRun"]] = relationship(back_populates="dataset", cascade="all, delete-orphan")
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=sa.func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=sa.func.now(), onupdate=sa.func.now()
+    )
+
+    examples: Mapped[list[EvalExample]] = relationship(
+        back_populates="dataset", cascade="all, delete-orphan"
+    )
+    runs: Mapped[list[EvalRun]] = relationship(
+        back_populates="dataset", cascade="all, delete-orphan"
+    )
 
 
 class EvalExample(Base):
     __tablename__ = "eval_examples"
 
     id: Mapped[uuid.UUID] = mapped_column(_UUID_TYPE, primary_key=True, default=uuid.uuid4)
-    dataset_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("eval_datasets.id", ondelete="CASCADE"), index=True)
-    
+    dataset_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("eval_datasets.id", ondelete="CASCADE"), index=True
+    )
+
     input_prompt: Mapped[str] = mapped_column(Text)
     expected_tools: Mapped[list[str]] = mapped_column(_JSON_TYPE, default=list)
     expected_output_contains: Mapped[list[str]] = mapped_column(_JSON_TYPE, default=list)
     must_not_contain: Mapped[list[str]] = mapped_column(_JSON_TYPE, default=list)
-    
+
     is_attack: Mapped[bool] = mapped_column(Boolean, default=False)
     attack_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
-    dataset: Mapped["EvalDataset"] = relationship(back_populates="examples")
+    dataset: Mapped[EvalDataset] = relationship(back_populates="examples")
 
 
 class EvalRun(Base):
     __tablename__ = "eval_runs"
 
     id: Mapped[uuid.UUID] = mapped_column(_UUID_TYPE, primary_key=True, default=uuid.uuid4)
-    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
-    dataset_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("eval_datasets.id", ondelete="CASCADE"), index=True)
-    
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    dataset_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("eval_datasets.id", ondelete="CASCADE"), index=True
+    )
+
     model: Mapped[str] = mapped_column(String(100), index=True)
     provider: Mapped[str] = mapped_column(String(100), index=True)
-    status: Mapped[str] = mapped_column(String(20), default="pending", server_default="pending", nullable=False)
-    
+    status: Mapped[str] = mapped_column(
+        String(20), default="pending", server_default="pending", nullable=False
+    )
+
     success_rate: Mapped[float] = mapped_column(sa.Float, default=0.0)
     avg_latency_ms: Mapped[float] = mapped_column(sa.Float, default=0.0)
     avg_tokens: Mapped[float] = mapped_column(sa.Float, default=0.0)
     avg_cost_usd: Mapped[float] = mapped_column(sa.Float, default=0.0)
     sample_count: Mapped[int] = mapped_column(Integer, default=0)
-    
-    completed_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), server_default=sa.func.now())
-    
-    dataset: Mapped["EvalDataset"] = relationship(back_populates="runs")
-    results: Mapped[list["EvalResult"]] = relationship(back_populates="run", cascade="all, delete-orphan")
+
+    completed_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=sa.func.now()
+    )
+
+    dataset: Mapped[EvalDataset] = relationship(back_populates="runs")
+    results: Mapped[list[EvalResult]] = relationship(
+        back_populates="run", cascade="all, delete-orphan"
+    )
 
 
 class EvalResult(Base):
     __tablename__ = "eval_results"
 
     id: Mapped[uuid.UUID] = mapped_column(_UUID_TYPE, primary_key=True, default=uuid.uuid4)
-    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("eval_runs.id", ondelete="CASCADE"), index=True)
-    example_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("eval_examples.id", ondelete="CASCADE"), index=True)
-    
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("eval_runs.id", ondelete="CASCADE"), index=True
+    )
+    example_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("eval_examples.id", ondelete="CASCADE"), index=True
+    )
+
     actual_output: Mapped[str | None] = mapped_column(Text, nullable=True)
     tools_used: Mapped[list[str]] = mapped_column(_JSON_TYPE, default=list)
-    
+
     passed: Mapped[bool] = mapped_column(Boolean, default=False)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    
+
     latency_ms: Mapped[int] = mapped_column(Integer, default=0)
     total_tokens: Mapped[int] = mapped_column(Integer, default=0)
     cost_usd: Mapped[float] = mapped_column(sa.Float, default=0.0)
 
-    run: Mapped["EvalRun"] = relationship(back_populates="results")
+    run: Mapped[EvalRun] = relationship(back_populates="results")
 
 
 class Customer(Base):
     __tablename__ = "customers"
     id: Mapped[str] = mapped_column(String(50), primary_key=True)
-    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
     name: Mapped[str] = mapped_column(String(255))
     email: Mapped[str] = mapped_column(String(255))
+
 
 class Product(Base):
     __tablename__ = "products"
     id: Mapped[str] = mapped_column(String(50), primary_key=True)
-    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
     name: Mapped[str] = mapped_column(String(255))
     sku: Mapped[str] = mapped_column(String(100))
     availability: Mapped[str] = mapped_column(String(50))
     base_price: Mapped[float] = mapped_column(sa.Float, default=0.0)
 
+
 class Quotation(Base):
     __tablename__ = "quotations"
     id: Mapped[str] = mapped_column(String(50), primary_key=True)
-    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
-    customer_id: Mapped[str] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"), index=True)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    customer_id: Mapped[str] = mapped_column(
+        ForeignKey("customers.id", ondelete="CASCADE"), index=True
+    )
     items: Mapped[list[dict[str, Any]]] = mapped_column(_JSON_TYPE, default=list)
     total: Mapped[str] = mapped_column(String(50))
     status: Mapped[str] = mapped_column(String(50))

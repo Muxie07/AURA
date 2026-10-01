@@ -11,10 +11,12 @@ from app.config.settings import get_settings
 
 logger = structlog.get_logger(__name__)
 
+
 class FailureDiagnosis(BaseModel):
     category: FailureCategory
     reasoning: str
     recommended_action: Literal["RETRY", "REPLAN", "ASK_USER", "FAIL"]
+
 
 class VerificationNode(BaseNode):
     def __init__(self, llm_service: LLMService):
@@ -32,7 +34,10 @@ class VerificationNode(BaseNode):
 
         # Check max tool calls
         if len(state.action_history) >= self.settings.max_tool_calls:
-            state.add_error(FailureCategory.TIMEOUT, f"Max tool calls ({self.settings.max_tool_calls}) exceeded.")
+            state.add_error(
+                FailureCategory.TIMEOUT,
+                f"Max tool calls ({self.settings.max_tool_calls}) exceeded.",
+            )
             state.status = AgentNodeState.FAILED
             return state
 
@@ -42,7 +47,7 @@ class VerificationNode(BaseNode):
             last_history.verification = ActionVerification(
                 success=False,
                 confidence=1.0,
-                issues=[f"Execution failed: {last_history.error.message}"]
+                issues=[f"Execution failed: {last_history.error.message}"],
             )
             state.status = AgentNodeState.DIAGNOSING
             return state
@@ -65,9 +70,7 @@ class VerificationNode(BaseNode):
             issues.append(result["error"])
 
         last_history.verification = ActionVerification(
-            success=is_success,
-            confidence=1.0,
-            issues=issues
+            success=is_success, confidence=1.0, issues=issues
         )
 
         if is_success:
@@ -103,13 +106,14 @@ class DiagnoseNode(BaseNode):
 
         user_prompt = f"Action: {last_history.action.model_dump_json()}\nIssues: {issues}"
 
-        request = GenerationRequest(organization_id=state.organization_id,
+        request = GenerationRequest(
+            organization_id=state.organization_id,
             model=self.settings.fast_model,
             messages=[
                 Message(role="system", content=system_prompt),
-                Message(role="user", content=user_prompt)
+                Message(role="user", content=user_prompt),
             ],
-            temperature=0.0
+            temperature=0.0,
         )
 
         try:
@@ -125,7 +129,9 @@ class DiagnoseNode(BaseNode):
             elif diagnosis.recommended_action == "REPLAN":
                 state.status = AgentNodeState.REPLANNING
             elif diagnosis.recommended_action == "ASK_USER":
-                state.add_error(FailureCategory.BUSINESS_RULE, f"Missing info: {diagnosis.reasoning}")
+                state.add_error(
+                    FailureCategory.BUSINESS_RULE, f"Missing info: {diagnosis.reasoning}"
+                )
                 state.status = AgentNodeState.WAITING
             else:
                 state.add_error(diagnosis.category, diagnosis.reasoning)
@@ -150,7 +156,10 @@ class ReplanNode(BaseNode):
 
     async def _execute(self, state: AgentState, **kwargs: Any) -> AgentState:
         if state.replans >= self.settings.max_replan_attempts:
-            state.add_error(FailureCategory.TIMEOUT, f"Max replan attempts ({self.settings.max_replan_attempts}) exceeded.")
+            state.add_error(
+                FailureCategory.TIMEOUT,
+                f"Max replan attempts ({self.settings.max_replan_attempts}) exceeded.",
+            )
             state.status = AgentNodeState.FAILED
             return state
 

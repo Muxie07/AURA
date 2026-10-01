@@ -10,12 +10,12 @@ except ImportError:
     genai = None  # type: ignore
 
 from app.ai.errors.exceptions import (
-    LLMValidationError,
     LLMAuthenticationError,
     LLMProviderError,
+    LLMQuotaExceededError,
     LLMRateLimitError,
     LLMTimeoutError,
-    LLMQuotaExceededError
+    LLMValidationError,
 )
 from app.ai.providers.base import LLMProvider
 from app.ai.schemas.generation import GenerationRequest, GenerationResult
@@ -23,6 +23,7 @@ from app.ai.schemas.usage import Usage
 from app.config.settings import get_settings
 
 T = TypeVar("T", bound=BaseModel)
+
 
 class GeminiProvider(LLMProvider):
     """Google Gemini implementation of the LLMProvider interface."""
@@ -32,15 +33,22 @@ class GeminiProvider(LLMProvider):
             raise LLMProviderError("google-genai package is not installed.")
 
         settings = get_settings()
-        api_key = settings.google_ai_api_key.get_secret_value() if settings.google_ai_api_key else None
+        api_key = (
+            settings.google_ai_api_key.get_secret_value() if settings.google_ai_api_key else None
+        )
 
         if not api_key:
             import os
+
             api_key = os.getenv("GEMINI_API_KEY")
 
         if not api_key:
             from fastapi import HTTPException
-            raise HTTPException(status_code=400, detail="AURA AI provider is not configured. Check the LLM provider and API key.")
+
+            raise HTTPException(
+                status_code=400,
+                detail="AURA AI provider is not configured. Check the LLM provider and API key.",
+            )
 
         self.client = genai.Client(api_key=api_key)
 
@@ -52,13 +60,16 @@ class GeminiProvider(LLMProvider):
         """Map vendor exceptions to AURA domain exceptions."""
         try:
             from google.genai.errors import APIError
+
             if isinstance(e, APIError):
                 if e.code == 401 or e.code == 403:
                     return LLMAuthenticationError(f"Gemini authentication failed: {e}")
                 if e.code == 429:
                     # Check if it's a hard quota limit vs a temporary burst limit
                     if "GenerateRequestsPerDay" in str(e) or "quota" in str(e).lower():
-                        return LLMQuotaExceededError(f"Gemini quota exhausted (429): {e}", provider="gemini", status=429)
+                        return LLMQuotaExceededError(
+                            f"Gemini quota exhausted (429): {e}", provider="gemini", status=429
+                        )
                     return LLMRateLimitError(f"Gemini temporary rate limit (429): {e}")
                 if e.code == 500 or e.code == 503:
                     return LLMRateLimitError(f"Gemini temporary availability issue: {e}")
@@ -80,10 +91,7 @@ class GeminiProvider(LLMProvider):
                 gemini_role = "user"
 
             contents.append(
-                types.Content(
-                    role=gemini_role,
-                    parts=[types.Part.from_text(text=msg.content)]
-                )
+                types.Content(role=gemini_role, parts=[types.Part.from_text(text=msg.content)])
             )
         return contents
 
@@ -104,6 +112,7 @@ class GeminiProvider(LLMProvider):
         )
 
         import asyncio
+
         settings = get_settings()
         timeout = settings.llm_timeout
 
@@ -114,7 +123,7 @@ class GeminiProvider(LLMProvider):
                     contents=contents,
                     config=config,
                 ),
-                timeout=timeout
+                timeout=timeout,
             )
         except TimeoutError as e:
             raise LLMTimeoutError(f"Gemini request timed out after {timeout} seconds") from e
@@ -142,6 +151,7 @@ class GeminiProvider(LLMProvider):
         schema: type[T],
     ) -> tuple[GenerationResult, T]:
         schema_dict = schema.model_json_schema()
+
         def remove_additional_properties(d):
             if isinstance(d, dict):
                 d.pop("additionalProperties", None)
@@ -150,6 +160,7 @@ class GeminiProvider(LLMProvider):
             elif isinstance(d, list):
                 for item in d:
                     remove_additional_properties(item)
+
         remove_additional_properties(schema_dict)
 
         contents = self._prepare_messages(request)
@@ -161,6 +172,7 @@ class GeminiProvider(LLMProvider):
         )
 
         import asyncio
+
         settings = get_settings()
         timeout = settings.llm_timeout
 
@@ -171,7 +183,7 @@ class GeminiProvider(LLMProvider):
                     contents=contents,
                     config=config,
                 ),
-                timeout=timeout
+                timeout=timeout,
             )
         except TimeoutError as e:
             raise LLMTimeoutError(f"Gemini request timed out after {timeout} seconds") from e
@@ -225,7 +237,7 @@ class GeminiProvider(LLMProvider):
         try:
             response = await self.client.aio.models.embed_content(
                 model=model,
-                contents=texts, # type: ignore
+                contents=texts,  # type: ignore
             )
             # Pad to 1536 dimensions for AURA DB compatibility
             result = []

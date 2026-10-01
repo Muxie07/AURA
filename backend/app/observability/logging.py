@@ -7,6 +7,7 @@ Provides structured JSON logging via structlog with:
 - Log level configuration from settings
 - Consistent log context across async boundaries
 """
+
 from __future__ import annotations
 
 import logging

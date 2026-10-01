@@ -13,13 +13,13 @@ class PromptRegistry:
         "intent_classification:v1": {
             "system_prompt": "You are an expert intent classifier. Determine the intent of the user message.",
             "version": "1.0",
-            "metadata": {"task": "classification"}
+            "metadata": {"task": "classification"},
         },
         "default:v1": {
             "system_prompt": "You are AURA, an autonomous AI business operations engineer.",
             "version": "1.0",
-            "metadata": {"task": "general"}
-        }
+            "metadata": {"task": "general"},
+        },
     }
 
     @classmethod

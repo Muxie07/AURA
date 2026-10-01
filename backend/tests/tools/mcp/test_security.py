@@ -19,6 +19,7 @@ async def setup_server_loop():
     yield
     task.cancel()
 
+
 def create_mock_token(org_id: str, permissions: list[str]) -> str:
     settings = get_settings()
     payload = {
@@ -28,24 +29,46 @@ def create_mock_token(org_id: str, permissions: list[str]) -> str:
     }
     return jwt.encode(payload, settings.aura_secret_key.get_secret_value(), algorithm="HS256")
 
+
 @pytest.mark.asyncio
 async def test_mcp_unauthenticated_request_rejected():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post("/api/v1/mcp/messages/", headers={"Accept": "application/json, text/event-stream"}, json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+        response = await client.post(
+            "/api/v1/mcp/messages/",
+            headers={"Accept": "application/json, text/event-stream"},
+            json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+        )
         if response.status_code == 307:
-            response = await client.post(response.headers["location"], headers={"Accept": "application/json, text/event-stream"}, json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+            response = await client.post(
+                response.headers["location"],
+                headers={"Accept": "application/json, text/event-stream"},
+                json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+            )
         assert response.status_code == 401
         assert response.text == "Unauthorized"
 
+
 @pytest.mark.asyncio
 async def test_mcp_invalid_token_rejected():
-    headers = {"Authorization": "Bearer invalid-token", "Accept": "application/json, text/event-stream"}
+    headers = {
+        "Authorization": "Bearer invalid-token",
+        "Accept": "application/json, text/event-stream",
+    }
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post("/api/v1/mcp/messages/", headers=headers, json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+        response = await client.post(
+            "/api/v1/mcp/messages/",
+            headers=headers,
+            json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+        )
         if response.status_code == 307:
-            response = await client.post(response.headers["location"], headers=headers, json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+            response = await client.post(
+                response.headers["location"],
+                headers=headers,
+                json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+            )
         assert response.status_code == 401
         assert response.text == "Invalid token"
+
 
 @pytest.mark.asyncio
 async def test_mcp_valid_tenant_a_cannot_access_tenant_b():
@@ -55,12 +78,20 @@ async def test_mcp_valid_tenant_a_cannot_access_tenant_b():
     headers = {
         "Authorization": f"Bearer {token}",
         "X-Organization-Id": fake_org_id,
-        "Accept": "application/json, text/event-stream"
+        "Accept": "application/json, text/event-stream",
     }
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post("/api/v1/mcp/messages/", headers=headers, json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+        response = await client.post(
+            "/api/v1/mcp/messages/",
+            headers=headers,
+            json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+        )
         if response.status_code == 307:
-            response = await client.post(response.headers["location"], headers=headers, json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+            response = await client.post(
+                response.headers["location"],
+                headers=headers,
+                json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+            )
         assert response.status_code == 403
         assert response.text == "Spoofed organization header"
 
@@ -69,11 +100,14 @@ async def test_mcp_valid_tenant_a_cannot_access_tenant_b():
 async def test_mcp_write_permission_denied():
     org_id = uuid.uuid4()
     mcp_org_id.set(org_id)
-    mcp_permissions.set(["tools:read"]) # Missing tools:write
+    mcp_permissions.set(["tools:read"])  # Missing tools:write
 
     result = await call_tool("test_write_tool", {})
     text = result[0].text
-    assert "Unknown tool" in text or "Missing tools:write" in text or "DENY" in text or "Error" in text
+    assert (
+        "Unknown tool" in text or "Missing tools:write" in text or "DENY" in text or "Error" in text
+    )
+
 
 @pytest.mark.asyncio
 async def test_mcp_direct_execution_cannot_bypass_policy_engine():

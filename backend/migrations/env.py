@@ -5,6 +5,7 @@ This env.py supports both online (live DB) and offline (SQL script) modes.
 Uses asyncpg for async PostgreSQL operations.
 Database URL is loaded from application settings — never from alembic.ini.
 """
+
 from __future__ import annotations
 
 import asyncio

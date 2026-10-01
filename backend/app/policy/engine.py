@@ -15,7 +15,7 @@ class PolicyEngine:
         if context.risk_level == RiskLevel.EXTERNAL_SIDE_EFFECT:
             return PolicyRuleResult(
                 decision=PolicyDecision.REQUIRE_APPROVAL,
-                reason="External side effects always require human approval."
+                reason="External side effects always require human approval.",
             )
 
         # 2. Write operations
@@ -23,11 +23,11 @@ class PolicyEngine:
             if "tools:write" not in context.permissions:
                 return PolicyRuleResult(
                     decision=PolicyDecision.DENY,
-                    reason="Missing 'tools:write' permission for a write operation."
+                    reason="Missing 'tools:write' permission for a write operation.",
                 )
             return PolicyRuleResult(
                 decision=PolicyDecision.ALLOW,
-                reason="Write operation allowed with sufficient permissions."
+                reason="Write operation allowed with sufficient permissions.",
             )
 
         # 3. Read operations
@@ -35,15 +35,14 @@ class PolicyEngine:
             if "tools:read" not in context.permissions:
                 return PolicyRuleResult(
                     decision=PolicyDecision.DENY,
-                    reason="Missing 'tools:read' permission for a read operation."
+                    reason="Missing 'tools:read' permission for a read operation.",
                 )
             return PolicyRuleResult(
                 decision=PolicyDecision.ALLOW,
-                reason="Read operation allowed with sufficient permissions."
+                reason="Read operation allowed with sufficient permissions.",
             )
 
         # Default Deny
         return PolicyRuleResult(
-            decision=PolicyDecision.DENY,
-            reason="Unrecognized risk level. Defaulting to DENY."
+            decision=PolicyDecision.DENY, reason="Unrecognized risk level. Defaulting to DENY."
         )

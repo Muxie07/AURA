@@ -1,17 +1,21 @@
 import subprocess
-import time
 import sys
-import urllib.request
+import time
 import urllib.error
+import urllib.request
+
 
 def check_docker_compose():
     print("Running docker-compose config check...")
-    res = subprocess.run(["docker", "compose", "config"], capture_output=True, text=True)
+    res = subprocess.run(
+        ["docker", "compose", "config"], capture_output=True, text=True
+    )
     if res.returncode != 0:
         print("docker-compose config failed!")
         print(res.stderr)
         sys.exit(1)
     print("docker-compose config is valid.")
+
 
 def ping_health_endpoint(url, timeout=30):
     start = time.time()
@@ -26,6 +30,7 @@ def ping_health_endpoint(url, timeout=30):
         time.sleep(2)
     print(f"Healthcheck failed for {url} after {timeout} seconds.")
     return False
+
 
 if __name__ == "__main__":
     check_docker_compose()

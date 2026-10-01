@@ -8,4 +8,5 @@ class AgentLimits(BaseSettings):
     agent_timeout_seconds: int = 300
     max_plan_steps: int = 10
 
+
 limits = AgentLimits()

@@ -24,9 +24,9 @@ async def test_parallel_dependencies(monkeypatch):
             steps=[
                 AgentPlanStep(id="A", type="test_tool", description="A"),
                 AgentPlanStep(id="B", type="test_tool", description="B"),
-                AgentPlanStep(id="C", type="test_tool", description="C", dependencies=["A", "B"])
-            ]
-        )
+                AgentPlanStep(id="C", type="test_tool", description="C", dependencies=["A", "B"]),
+            ],
+        ),
     )
 
     class MockLLM:
@@ -38,7 +38,9 @@ async def test_parallel_dependencies(monkeypatch):
                         self.action_type = "test_tool"
                         self.arguments = {}
                         self.reasoning = "test"
+
                 actions = [MockAction("A"), MockAction("B")]
+
             return None, MockDecision()
 
     decision_node = DecisionNode(MockLLM())
@@ -61,6 +63,7 @@ async def test_parallel_dependencies(monkeypatch):
             class MockResult:
                 status = "success"
                 result = "ok"
+
             return MockResult()
 
     registry = ToolRegistry()
@@ -69,7 +72,7 @@ async def test_parallel_dependencies(monkeypatch):
     class MockPolicyDecision:
         decision = PolicyDecision.ALLOW
 
-    monkeypatch.setattr(PolicyEngine, 'evaluate', lambda ctx: MockPolicyDecision())
+    monkeypatch.setattr(PolicyEngine, "evaluate", lambda ctx: MockPolicyDecision())
 
     exec = ExecutionNode(registry)
     state = await exec._execute(state)
@@ -84,7 +87,9 @@ async def test_parallel_dependencies(monkeypatch):
                         self.action_type = "test_tool"
                         self.arguments = {}
                         self.reasoning = "test"
+
                 actions = [MockAction2("C")]
+
             return None, MockDecision2()
 
     decision_node2 = DecisionNode(MockLLM2())

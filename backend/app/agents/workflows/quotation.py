@@ -9,13 +9,14 @@ from app.agents.workflows.schemas import QuotationDraft, QuotationLine
 # Mock Data
 CUSTOMERS = {
     "CUST-001": {"id": "CUST-001", "name": "Acme Corp", "status": "ACTIVE"},
-    "ABC": {"id": "CUST-ABC", "name": "ABC Logistics", "status": "ACTIVE"}
+    "ABC": {"id": "CUST-ABC", "name": "ABC Logistics", "status": "ACTIVE"},
 }
 
 PRODUCTS = {
     "PROD-X": {"id": "PROD-X", "name": "Product X", "base_price": "100.00"},
-    "X": {"id": "PROD-X", "name": "Product X", "base_price": "100.00"}
+    "X": {"id": "PROD-X", "name": "Product X", "base_price": "100.00"},
 }
+
 
 class RetrieveCustomerAction(ActionExecutor):
     @property
@@ -30,6 +31,7 @@ class RetrieveCustomerAction(ActionExecutor):
                 return {"found": True, "customer": cust}
         return {"found": False, "customer": None}
 
+
 class RetrieveProductAction(ActionExecutor):
     @property
     def name(self) -> str:
@@ -41,6 +43,7 @@ class RetrieveProductAction(ActionExecutor):
             if key in product_ref or product_ref in prod["name"].upper():
                 return {"found": True, "product": prod}
         return {"found": False, "product": None}
+
 
 class CalculateQuotationAction(ActionExecutor):
     @property
@@ -58,13 +61,10 @@ class CalculateQuotationAction(ActionExecutor):
             tax = subtotal * tax_rate
             total = subtotal + tax
 
-            return {
-                "subtotal": str(subtotal),
-                "tax": str(tax),
-                "total": str(total)
-            }
+            return {"subtotal": str(subtotal), "tax": str(tax), "total": str(total)}
         except Exception as e:
             return {"error": str(e)}
+
 
 class CreateQuotationDraftAction(ActionExecutor):
     @property
@@ -78,13 +78,15 @@ class CreateQuotationDraftAction(ActionExecutor):
         try:
             lines = []
             for item in args.get("lines", []):
-                lines.append(QuotationLine(
-                    product_id=item["product_id"],
-                    description=item["description"],
-                    quantity=int(item["quantity"]),
-                    unit_price=Decimal(str(item["unit_price"])),
-                    subtotal=Decimal(str(item["subtotal"]))
-                ))
+                lines.append(
+                    QuotationLine(
+                        product_id=item["product_id"],
+                        description=item["description"],
+                        quantity=int(item["quantity"]),
+                        unit_price=Decimal(str(item["unit_price"])),
+                        subtotal=Decimal(str(item["subtotal"])),
+                    )
+                )
 
             draft = QuotationDraft(
                 quotation_id=f"Q-{str(uuid.uuid4())[:8]}",
@@ -95,7 +97,7 @@ class CreateQuotationDraftAction(ActionExecutor):
                 tax=Decimal(str(args["tax"])),
                 total=Decimal(str(args["total"])),
                 currency=args.get("currency", "USD"),
-                status="DRAFT"
+                status="DRAFT",
             )
             return {"success": True, "draft": draft.model_dump(mode="json")}
         except Exception as e:

@@ -59,13 +59,17 @@ def _generate_structured_response(state: AgentState) -> str:
                     health_note = "Response times are within acceptable bounds."
                 elif p95 < 500:
                     health = "acceptable"
-                    health_note = "Some endpoints are approaching latency thresholds — worth monitoring."
+                    health_note = (
+                        "Some endpoints are approaching latency thresholds — worth monitoring."
+                    )
                 elif p95 < 1000:
                     health = "concerning"
                     health_note = "Several endpoints are running slow and should be investigated."
                 else:
                     health = "critical"
-                    health_note = "Latency is critically high — immediate investigation recommended."
+                    health_note = (
+                        "Latency is critically high — immediate investigation recommended."
+                    )
 
                 lines.append(f"**API Performance Report — {time_range}**\n")
                 lines.append(f"AURA processed **{count:,} requests** in the observed window.")
@@ -77,7 +81,9 @@ def _generate_structured_response(state: AgentState) -> str:
                 lines.append(f"- P99: {p99} ms\n")
 
                 if err_rate > 0:
-                    lines.append(f"**Error Rate: {err_rate}%** ({err_count} errors out of {count} requests)")
+                    lines.append(
+                        f"**Error Rate: {err_rate}%** ({err_count} errors out of {count} requests)"
+                    )
                     if err_rate > 5:
                         lines.append("⚠️  Error rate exceeds 5% — investigate 4xx/5xx responses.")
                     elif err_rate > 1:
@@ -118,12 +124,11 @@ def _generate_structured_response(state: AgentState) -> str:
 
     if not lines:
         return (
-            f"I processed your request: \"{state.original_request}\". "
+            f'I processed your request: "{state.original_request}". '
             "However, no tool results were available to summarize."
         )
 
     return "\n".join(lines)
-
 
 
 class ActionSchema(BaseModel):
@@ -131,8 +136,10 @@ class ActionSchema(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict, description="Arguments for the action")
     reasoning: str = Field(..., description="Why this action was selected")
 
+
 class DecisionSchema(BaseModel):
     actions: list[ActionSchema] = Field(..., description="List of actions to execute in parallel")
+
 
 class DecisionNode(BaseNode):
     def __init__(self, llm_service: LLMService):
@@ -147,9 +154,13 @@ class DecisionNode(BaseNode):
             # Generate direct response without steps
             rag_context = ""
             if state.retrieved_context:
-                rag_context = "\n--- RAG CONTEXT ---\n" + "\n".join([f"Source: {c['source']}\n{c['content']}" for c in state.retrieved_context])
-            
-            sys_prompt = "You are AURA. Answer the user's request. Use the provided context if available."
+                rag_context = "\n--- RAG CONTEXT ---\n" + "\n".join(
+                    [f"Source: {c['source']}\n{c['content']}" for c in state.retrieved_context]
+                )
+
+            sys_prompt = (
+                "You are AURA. Answer the user's request. Use the provided context if available."
+            )
             usr_prompt = f"Original Request: {state.original_request}{rag_context}"
             req = GenerationRequest(
                 organization_id=state.organization_id,
@@ -162,16 +173,21 @@ class DecisionNode(BaseNode):
                         requires_structured_output=False,
                         context_length=len(sys_prompt) + len(usr_prompt),
                         latency_requirement="HIGH",
-                        cost_sensitivity="LOW"
+                        cost_sensitivity="LOW",
                     )
                 ).model,
-                messages=[Message(role="system", content=sys_prompt), Message(role="user", content=usr_prompt)]
+                messages=[
+                    Message(role="system", content=sys_prompt),
+                    Message(role="user", content=usr_prompt),
+                ],
             )
 
-            from app.config.settings import get_settings
             import redis.asyncio as aioredis
+
+            from app.config.settings import get_settings
+
             redis_client = aioredis.from_url(get_settings().redis_url, socket_timeout=2.0)
-            
+
             final_text = ""
             try:
                 async for chunk in self.llm.stream(req):
@@ -181,7 +197,8 @@ class DecisionNode(BaseNode):
                 state.status = AgentNodeState.COMPLETED
             except Exception as e:
                 from app.ai.errors.exceptions import LLMQuotaExceededError
-                if True: # Always fallback if stream fails
+
+                if True:  # Always fallback if stream fails
                     state.final_response = "I processed your request, but AURA's AI provider reached its limit while generating the final response."
                     state.status = AgentNodeState.COMPLETED
                 else:
@@ -206,7 +223,12 @@ class DecisionNode(BaseNode):
             # Either done or deadlock
             if len(executed_step_ids) == len(state.plan.steps):
                 # Generate final response based on history
-                history_context = "\n".join([f"Action: {h.action.action_type}, Result: {h.result}" for h in state.action_history])
+                history_context = "\n".join(
+                    [
+                        f"Action: {h.action.action_type}, Result: {h.result}"
+                        for h in state.action_history
+                    ]
+                )
                 sys_prompt = (
                     "You are AURA, an enterprise AI operations assistant.\n"
                     "Analyze the tool results and provide an intelligent, natural-language response.\n\n"
@@ -222,8 +244,10 @@ class DecisionNode(BaseNode):
                     "For other tools: summarize findings concisely and accurately.\n"
                     "Always respond in clear business English, not as a developer."
                 )
-                usr_prompt = f"Original Request: {state.original_request}\nTool Results:\n{history_context}"
-                
+                usr_prompt = (
+                    f"Original Request: {state.original_request}\nTool Results:\n{history_context}"
+                )
+
                 req = GenerationRequest(
                     organization_id=state.organization_id,
                     model=ModelRouter.route_task(
@@ -235,16 +259,21 @@ class DecisionNode(BaseNode):
                             requires_structured_output=False,
                             context_length=len(sys_prompt) + len(usr_prompt),
                             latency_requirement="HIGH",
-                            cost_sensitivity="LOW"
+                            cost_sensitivity="LOW",
                         )
                     ).model,
-                    messages=[Message(role="system", content=sys_prompt), Message(role="user", content=usr_prompt)]
+                    messages=[
+                        Message(role="system", content=sys_prompt),
+                        Message(role="user", content=usr_prompt),
+                    ],
                 )
 
-                from app.config.settings import get_settings
                 import redis.asyncio as aioredis
+
+                from app.config.settings import get_settings
+
                 redis_client = aioredis.from_url(get_settings().redis_url, socket_timeout=2.0)
-                
+
                 final_text = ""
                 try:
                     async for chunk in self.llm.stream(req):
@@ -254,7 +283,8 @@ class DecisionNode(BaseNode):
                     state.status = AgentNodeState.COMPLETED
                 except Exception as e:
                     from app.ai.errors.exceptions import LLMQuotaExceededError
-                    if True: # Always fallback if stream fails
+
+                    if True:  # Always fallback if stream fails
                         # LLM quota exhausted — generate a structured response directly from tool results
                         # without making another LLM call (zero additional quota usage)
                         fallback_text = _generate_structured_response(state)
@@ -273,14 +303,13 @@ class DecisionNode(BaseNode):
                 state.status = AgentNodeState.FAILED
             return state
 
-        history_context = "\n".join([
-            f"Action: {h.action.action_type}, Result: {h.result}"
-            for h in state.action_history
-        ])
+        history_context = "\n".join(
+            [f"Action: {h.action.action_type}, Result: {h.result}" for h in state.action_history]
+        )
 
-        steps_str = "\n".join([
-            f" - ID: {s.id}, Type: {s.type}, Desc: {s.description}" for s in ready_steps
-        ])
+        steps_str = "\n".join(
+            [f" - ID: {s.id}, Type: {s.type}, Desc: {s.description}" for s in ready_steps]
+        )
 
         system_prompt = (
             "You are the AURA Action Selection Agent.\n"
@@ -297,9 +326,12 @@ class DecisionNode(BaseNode):
                 rag_context += f"Source: {ctx['source']}\nContent: {ctx['content']}\n\n"
             rag_context += "--- END RAG CONTEXT ---\n"
 
-        user_prompt = f"{rag_context}History:\n{history_context}\n\nWhat are the exact actions to take?"
+        user_prompt = (
+            f"{rag_context}History:\n{history_context}\n\nWhat are the exact actions to take?"
+        )
 
-        request = GenerationRequest(organization_id=state.organization_id,
+        request = GenerationRequest(
+            organization_id=state.organization_id,
             model=ModelRouter.route_task(
                 TaskProfile(
                     task_type="TOOL_USE",
@@ -309,41 +341,46 @@ class DecisionNode(BaseNode):
                     requires_structured_output=True,
                     context_length=len(history_context) + len(rag_context),
                     latency_requirement="HIGH",
-                    cost_sensitivity="HIGH"
+                    cost_sensitivity="HIGH",
                 )
             ).model,
             messages=[
                 Message(role="system", content=system_prompt),
-                Message(role="user", content=user_prompt)
+                Message(role="user", content=user_prompt),
             ],
-            temperature=0.0
+            temperature=0.0,
         )
 
         try:
-            _result, parsed_decision = await self.llm.generate_structured(request, schema=DecisionSchema)
+            _result, parsed_decision = await self.llm.generate_structured(
+                request, schema=DecisionSchema
+            )
 
             state.current_actions = []
             for act in parsed_decision.actions:
                 step_match = next((s for s in ready_steps if s.id == act.action_id), None)
                 if step_match:
-                    state.current_actions.append(AgentAction(
-                        action_id=step_match.id,
+                    state.current_actions.append(
+                        AgentAction(
+                            action_id=step_match.id,
                             action_type=step_match.type,
-                        description=act.reasoning,
-                        arguments=act.arguments,
-                        status="PENDING"
-                    ))
+                            description=act.reasoning,
+                            arguments=act.arguments,
+                            status="PENDING",
+                        )
+                    )
 
             state.status = AgentNodeState.READY_TO_EXECUTE
 
         except Exception as e:
             logger.error("decision_failed", error=str(e), run_id=str(state.run_id))
             from app.ai.errors.exceptions import LLMQuotaExceededError
+
             if isinstance(e, LLMQuotaExceededError):
                 state.add_error(FailureCategory.LLM_FAILURE, f"AI Decision failed: {e}")
             else:
                 state.add_error(FailureCategory.LLM_FAILURE, f"Decision failed: {e}")
-                
+
             state.status = AgentNodeState.FAILED
 
         return state

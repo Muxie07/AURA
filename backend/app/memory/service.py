@@ -12,12 +12,18 @@ class MemoryService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def get_memory(self, organization_id: uuid.UUID, scope: MemoryScope, key: str,
-                        conversation_id: uuid.UUID | None = None, run_id: uuid.UUID | None = None) -> dict[str, Any] | None:
+    async def get_memory(
+        self,
+        organization_id: uuid.UUID,
+        scope: MemoryScope,
+        key: str,
+        conversation_id: uuid.UUID | None = None,
+        run_id: uuid.UUID | None = None,
+    ) -> dict[str, Any] | None:
         stmt = select(AgentMemory).where(
             AgentMemory.organization_id == organization_id,
             AgentMemory.scope == scope,
-            AgentMemory.key == key
+            AgentMemory.key == key,
         )
         if conversation_id:
             stmt = stmt.where(AgentMemory.conversation_id == conversation_id)
@@ -36,14 +42,21 @@ class MemoryService:
 
         return mem.content
 
-    async def set_memory(self, organization_id: uuid.UUID, scope: MemoryScope, key: str, content: dict[str, Any],
-                        conversation_id: uuid.UUID | None = None, run_id: uuid.UUID | None = None,
-                        expires_at: datetime | None = None) -> None:
+    async def set_memory(
+        self,
+        organization_id: uuid.UUID,
+        scope: MemoryScope,
+        key: str,
+        content: dict[str, Any],
+        conversation_id: uuid.UUID | None = None,
+        run_id: uuid.UUID | None = None,
+        expires_at: datetime | None = None,
+    ) -> None:
         # Check existing
         stmt = select(AgentMemory).where(
             AgentMemory.organization_id == organization_id,
             AgentMemory.scope == scope,
-            AgentMemory.key == key
+            AgentMemory.key == key,
         )
         if conversation_id:
             stmt = stmt.where(AgentMemory.conversation_id == conversation_id)
@@ -64,18 +77,24 @@ class MemoryService:
                 scope=scope,
                 key=key,
                 content=content,
-                expires_at=expires_at
+                expires_at=expires_at,
             )
             self.db.add(mem)
 
         await self.db.flush()
 
-    async def delete_memory(self, organization_id: uuid.UUID, scope: MemoryScope, key: str,
-                           conversation_id: uuid.UUID | None = None, run_id: uuid.UUID | None = None) -> None:
+    async def delete_memory(
+        self,
+        organization_id: uuid.UUID,
+        scope: MemoryScope,
+        key: str,
+        conversation_id: uuid.UUID | None = None,
+        run_id: uuid.UUID | None = None,
+    ) -> None:
         stmt = delete(AgentMemory).where(
             AgentMemory.organization_id == organization_id,
             AgentMemory.scope == scope,
-            AgentMemory.key == key
+            AgentMemory.key == key,
         )
         if conversation_id:
             stmt = stmt.where(AgentMemory.conversation_id == conversation_id)

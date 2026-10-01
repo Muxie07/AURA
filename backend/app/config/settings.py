@@ -5,6 +5,7 @@ Uses Pydantic Settings for environment variable binding with validation.
 All configuration is sourced from environment variables or a .env file.
 No secrets are ever hard-coded.
 """
+
 from __future__ import annotations
 
 from enum import StrEnum
@@ -154,7 +155,9 @@ class Settings(BaseSettings):
         description="LLM provider to use.",
     )
     primary_llm_model: str = Field(default="gpt-4o", description="Model identifier.")
-    fallback_llm_provider: ModelProvider | None = Field(default=None, description="Optional fallback provider")
+    fallback_llm_provider: ModelProvider | None = Field(
+        default=None, description="Optional fallback provider"
+    )
     fallback_llm_model: str | None = Field(default=None, description="Optional fallback model name")
     model_temperature: float = Field(
         default=0.1,

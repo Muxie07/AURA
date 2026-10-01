@@ -6,10 +6,14 @@ Implements:
 - Structured access logging with latency
 - Request context injection into structlog context vars
 """
+
 from __future__ import annotations
 
 import time
+
+_bg_tasks = set()
 import uuid
+from datetime import UTC
 from typing import TYPE_CHECKING
 
 import structlog
@@ -87,21 +91,22 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         # Push observability data to Redis if authenticated
         org_id = getattr(request.state, "organization_id", None)
         if org_id:
-            import json
-            from datetime import datetime, timezone
             import asyncio
+            import json
+            from datetime import datetime
+
             from app.security.rate_limit import get_redis_client
-            
+
             metric = {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "method": request.method,
                 "path": request.url.path,
                 "status_code": response.status_code,
                 "duration_ms": elapsed_ms,
                 "tenant_id": org_id,
-                "request_id": request_id
+                "request_id": request_id,
             }
-            
+
             async def push_metric(m):
                 try:
                     redis = await get_redis_client()
@@ -110,8 +115,10 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
                     await redis.ltrim(key, 0, 9999)  # Keep last 10,000 requests
                 except Exception:
                     pass
-            
-            asyncio.create_task(push_metric(metric))
+
+            task = asyncio.create_task(push_metric(metric))
+            _bg_tasks.add(task)
+            task.add_done_callback(_bg_tasks.discard)
 
         return response
 

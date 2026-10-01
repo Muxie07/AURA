@@ -19,7 +19,7 @@ def test_model_router_benchmark(monkeypatch: Any) -> None:
         requires_structured_output=False,
         context_length=100,
         latency_requirement="HIGH",
-        cost_sensitivity="HIGH"
+        cost_sensitivity="HIGH",
     )
     sel = ModelRouter.route_task(profile)
     # the router now uses settings.fast_model (test-fast) if the benchmark provider does not match the system provider.
@@ -34,7 +34,7 @@ def test_model_router_benchmark(monkeypatch: Any) -> None:
         requires_structured_output=True,
         context_length=1000,
         latency_requirement="LOW",
-        cost_sensitivity="LOW"
+        cost_sensitivity="LOW",
     )
     sel = ModelRouter.route_task(profile)
     assert sel.model in ["gpt-4o", "test-reason"]
@@ -48,7 +48,7 @@ def test_model_router_benchmark(monkeypatch: Any) -> None:
         requires_structured_output=False,
         context_length=50000,
         latency_requirement="LOW",
-        cost_sensitivity="LOW"
+        cost_sensitivity="LOW",
     )
     sel = ModelRouter.route_task(profile)
     assert sel.model == "test-long"

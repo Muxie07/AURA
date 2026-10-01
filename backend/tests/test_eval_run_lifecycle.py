@@ -10,7 +10,13 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.database.base import get_db_session
 from app.database.models import (
-    AgentRun, EvalDataset, EvalExample, EvalResult, EvalRun, Organization, User,
+    AgentRun,
+    EvalDataset,
+    EvalExample,
+    EvalResult,
+    EvalRun,
+    Organization,
+    User,
 )
 
 
@@ -30,17 +36,41 @@ async def test_run_lifecycle_persists_failures_and_continues_without_cloud_llm(
     user_id = uuid.UUID("00000000-0000-0000-0000-000000000002")
     async with factory() as db:
         db.add(Organization(id=org_id, name="Test", slug="eval-test", settings={}))
-        db.add(User(id=user_id, organization_id=org_id, email="eval@example.test",
-            full_name="Eval Test", is_active=True, metadata_={}))
-        dataset = EvalDataset(organization_id=org_id, name="Lifecycle test", category="test", version=1)
+        db.add(
+            User(
+                id=user_id,
+                organization_id=org_id,
+                email="eval@example.test",
+                full_name="Eval Test",
+                is_active=True,
+                metadata_={},
+            )
+        )
+        dataset = EvalDataset(
+            organization_id=org_id, name="Lifecycle test", category="test", version=1
+        )
         db.add(dataset)
         await db.flush()
-        db.add_all([
-            EvalExample(dataset_id=dataset.id, input_prompt="failure", expected_tools=[],
-                expected_output_contains=[], must_not_contain=[], is_attack=False),
-            EvalExample(dataset_id=dataset.id, input_prompt="success", expected_tools=[],
-                expected_output_contains=[], must_not_contain=[], is_attack=False),
-        ])
+        db.add_all(
+            [
+                EvalExample(
+                    dataset_id=dataset.id,
+                    input_prompt="failure",
+                    expected_tools=[],
+                    expected_output_contains=[],
+                    must_not_contain=[],
+                    is_attack=False,
+                ),
+                EvalExample(
+                    dataset_id=dataset.id,
+                    input_prompt="success",
+                    expected_tools=[],
+                    expected_output_contains=[],
+                    must_not_contain=[],
+                    is_attack=False,
+                ),
+            ]
+        )
         await db.commit()
         dataset_id = dataset.id
 
@@ -64,25 +94,33 @@ async def test_run_lifecycle_persists_failures_and_continues_without_cloud_llm(
             await self.session.commit()
 
     monkeypatch.setattr("app.ai.services.llm.LLMService", NoCloudLLM)
-    monkeypatch.setattr("app.agents.services.agent_service.AgentWorkflowService", DeterministicAgent)
+    monkeypatch.setattr(
+        "app.agents.services.agent_service.AgentWorkflowService", DeterministicAgent
+    )
 
     from jose import jwt
+
     token = jwt.encode(
         {"sub": str(user_id), "org_id": str(org_id), "exp": 9999999999},
         "test-secret-key-at-least-32-characters-long",
         algorithm="HS256",
     )
     headers = {"Authorization": f"Bearer {token}"}
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test",
-        headers=headers) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test", headers=headers
+    ) as client:
         settings = await client.get("/api/v1/settings")
         assert settings.status_code == 200
         settings_payload = settings.json()
         assert settings_payload["organization"]["id"] == str(org_id)
         assert "secret" not in str(settings_payload).lower()
 
-        request_task = asyncio.create_task(client.post("/api/v1/eval/runs",
-            json={"dataset_id": str(dataset_id), "provider": "mock", "model": "test"}))
+        request_task = asyncio.create_task(
+            client.post(
+                "/api/v1/eval/runs",
+                json={"dataset_id": str(dataset_id), "provider": "mock", "model": "test"},
+            )
+        )
         await asyncio.wait_for(started.wait(), timeout=5)
         run_list = await client.get("/api/v1/eval/runs")
         assert run_list.status_code == 200
@@ -107,8 +145,10 @@ async def test_run_lifecycle_persists_failures_and_continues_without_cloud_llm(
 
     async with factory() as db:
         stored_run = await db.scalar(select(EvalRun).where(EvalRun.id == uuid.UUID(run_id)))
-        stored_results = list((await db.scalars(
-            select(EvalResult).where(EvalResult.run_id == uuid.UUID(run_id))
-        )).all())
+        stored_results = list(
+            (
+                await db.scalars(select(EvalResult).where(EvalResult.run_id == uuid.UUID(run_id)))
+            ).all()
+        )
         assert stored_run is not None and stored_run.status == "completed"
         assert len(stored_results) == 2

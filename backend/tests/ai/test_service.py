@@ -33,11 +33,7 @@ async def test_llm_service_budget_enforcement(monkeypatch: Any) -> None:
 
     # Very long prompt to trigger budget exceeded
     messages = [Message(role="user", content="A" * 10000000)]
-    request = GenerationRequest(
-        messages=messages,
-        model="gpt-4-turbo",
-        organization_id=org_id
-    )
+    request = GenerationRequest(messages=messages, model="gpt-4-turbo", organization_id=org_id)
 
     with pytest.raises(Exception, match="Budget exceeded"):
         await service.generate(request)
@@ -61,17 +57,18 @@ async def test_llm_service_fallback(monkeypatch: Any) -> None:
             if request.model == "failing-model":
                 raise LLMTimeoutError("Timeout")
             from app.ai.schemas.usage import Usage
+
             return GenerationResult(
                 text="fallback success",
                 model=request.model,
                 provider="mock",
-                usage=Usage(prompt_tokens=10, completion_tokens=10, total_tokens=20)
+                usage=Usage(prompt_tokens=10, completion_tokens=10, total_tokens=20),
             )
 
         async def generate_structured(self, request: Any, schema: Any) -> Any:
             raise NotImplementedError()
 
-        async def stream(self, request: Any) -> Any: # type: ignore
+        async def stream(self, request: Any) -> Any:  # type: ignore
             raise NotImplementedError()
 
         async def embed(self, texts: list[str], model: str) -> list[list[float]]:
@@ -82,14 +79,16 @@ async def test_llm_service_fallback(monkeypatch: Any) -> None:
     request = GenerationRequest(
         messages=[Message(role="user", content="Hello")],
         model="failing-model",
-        organization_id=org_id
+        organization_id=org_id,
     )
 
     # Monkeypatch get_retry_decorator to not retry, just raise immediately to test fallback
     def no_retry() -> Any:
         def decorator(func: Any) -> Any:
             return func
+
         return decorator
+
     monkeypatch.setattr(service, "_get_retry_decorator", no_retry)
 
     result = await service.generate_with_fallback(request, fallback_model="gpt-4o-mini")

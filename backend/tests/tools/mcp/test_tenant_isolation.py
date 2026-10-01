@@ -13,6 +13,7 @@ async def test_mcp_tenant_isolation_unauthenticated(client):
     result = await call_tool("customer.search", {"query": "test"})
     assert result[0].text == "Error: Unauthenticated. Missing organization context."
 
+
 @pytest.mark.asyncio
 async def test_mcp_tenant_isolation_authenticated(client):
     org_id = uuid.uuid4()
@@ -25,14 +26,16 @@ async def test_mcp_tenant_isolation_authenticated(client):
     # The result should be valid json or empty array, not an auth error
     assert "Error:" not in result[0].text
 
+
 @pytest.mark.asyncio
 async def test_mcp_authorization_failure(client):
     org_id = uuid.uuid4()
     mcp_org_id.set(org_id)
-    mcp_permissions.set(["tools:read"]) # Missing write
+    mcp_permissions.set(["tools:read"])  # Missing write
 
     result = await call_tool("quotation.create_draft", {"quantity": 10})
     assert "Missing tools:write permission" in result[0].text
+
 
 @pytest.mark.asyncio
 async def test_mcp_anti_spoofing(client):
@@ -48,8 +51,8 @@ async def test_mcp_anti_spoofing(client):
         {
             "query": "test",
             "organization_id": str(fake_org_id),
-            "__aura_context": {"organization_id": str(fake_org_id)}
-        }
+            "__aura_context": {"organization_id": str(fake_org_id)},
+        },
     )
     # The server drops the spoofed arguments and relies purely on `mcp_org_id.get()`
     assert "Error:" not in result[0].text

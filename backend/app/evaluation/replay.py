@@ -4,6 +4,7 @@ AURA Phase 9 — Replay Engine.
 Allows deterministic replay of agent runs using recorded inputs.
 Supports run export to JSON for debugging and auditing.
 """
+
 from __future__ import annotations
 
 import json
@@ -88,11 +89,7 @@ class ReplayEngine:
     def list_org_runs(organization_id: uuid.UUID) -> list[str]:
         """List all recorded run IDs for an organization."""
         prefix = f"{organization_id}:"
-        return [
-            key.split(":", 1)[1]
-            for key in _replay_store
-            if key.startswith(prefix)
-        ]
+        return [key.split(":", 1)[1] for key in _replay_store if key.startswith(prefix)]
 
     @staticmethod
     def clear(organization_id: uuid.UUID | None = None) -> None:

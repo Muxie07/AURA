@@ -15,6 +15,7 @@ from app.tools.schemas import ToolContext
 logger = structlog.get_logger(__name__)
 UTC = UTC
 
+
 class FailureNode(BaseNode):
     @property
     def name(self) -> str:
@@ -34,7 +35,10 @@ class FailureNode(BaseNode):
         # 2. Check total tool calls
         if len(state.action_history) >= state.limits.max_tool_calls:
             state.status = AgentNodeState.FAILED
-            state.add_error(FailureCategory.BUSINESS_RULE, f"Max tool calls ({state.limits.max_tool_calls}) exceeded")
+            state.add_error(
+                FailureCategory.BUSINESS_RULE,
+                f"Max tool calls ({state.limits.max_tool_calls}) exceeded",
+            )
             return state
 
         # 3. Determine diagnosis
@@ -59,6 +63,7 @@ class FailureNode(BaseNode):
         state.status = AgentNodeState.PLANNING
         state.current_actions = []
         return state
+
 
 class FinalizeNode(BaseNode):
     @property
@@ -78,7 +83,10 @@ class FinalizeNode(BaseNode):
         # 2. Check total tool calls
         if len(state.action_history) >= state.limits.max_tool_calls:
             state.status = AgentNodeState.FAILED
-            state.add_error(FailureCategory.BUSINESS_RULE, f"Max tool calls ({state.limits.max_tool_calls}) exceeded")
+            state.add_error(
+                FailureCategory.BUSINESS_RULE,
+                f"Max tool calls ({state.limits.max_tool_calls}) exceeded",
+            )
             return state
 
         # 3. Determine diagnosis
@@ -104,6 +112,7 @@ class FinalizeNode(BaseNode):
         state.current_actions = []
         return state
 
+
 class ExecutionNode(BaseNode):
     def __init__(self, registry: ToolRegistry):
         self.registry = registry
@@ -118,21 +127,25 @@ class ExecutionNode(BaseNode):
 
         async def execute_action(action):
             import uuid
+
             context = ToolContext(
                 organization_id=state.organization_id,
                 agent_run_id=state.run_id,
                 execution_id=uuid.uuid4().hex,
                 dry_run=False,
-                idempotency_key=action.arguments.get('_idempotency_key')
+                idempotency_key=action.arguments.get("_idempotency_key"),
             )
 
             start_time = datetime.now(timezone.utc)
 
             from app.tools.errors import ToolNotFoundError
+
             try:
                 tool = self.registry.get(action.action_type)
             except ToolNotFoundError:
-                state.add_error(FailureCategory.VALIDATION, f"Unknown tool type: {action.action_type}")
+                state.add_error(
+                    FailureCategory.VALIDATION, f"Unknown tool type: {action.action_type}"
+                )
                 return
 
             policy_ctx = PolicyContext(
@@ -141,36 +154,47 @@ class ExecutionNode(BaseNode):
                 tool_name=tool.definition.name,
                 risk_level=tool.definition.risk_level,
                 arguments=action.arguments,
-                permissions=kwargs.get('permissions', ['tools:read', 'tools:write', 'tools:external']) # Mock permissions if not provided
+                permissions=kwargs.get(
+                    "permissions", ["tools:read", "tools:write", "tools:external"]
+                ),  # Mock permissions if not provided
             )
 
             policy_decision = PolicyEngine.evaluate(policy_ctx)
 
             if policy_decision.decision == PolicyDecision.DENY:
-                state.add_error(FailureCategory.AUTHORIZATION, f"Policy Denied: {policy_decision.reason}")
+                state.add_error(
+                    FailureCategory.AUTHORIZATION, f"Policy Denied: {policy_decision.reason}"
+                )
                 return
 
             if policy_decision.decision == PolicyDecision.REQUIRE_APPROVAL:
-                db = kwargs.get('db')
+                db = kwargs.get("db")
                 if db:
-                    from app.database.models import ApprovalRequest, ApprovalStatus
                     import sqlalchemy as sa
+
+                    from app.database.models import ApprovalRequest, ApprovalStatus
+
                     existing_approval = await db.scalar(
-                        sa.select(ApprovalRequest).where(
+                        sa.select(ApprovalRequest)
+                        .where(
                             ApprovalRequest.agent_run_id == state.run_id,
                             ApprovalRequest.tool_name == tool.definition.name,
-                        ).order_by(ApprovalRequest.created_at.desc())
+                        )
+                        .order_by(ApprovalRequest.created_at.desc())
                     )
-                    
+
                     if existing_approval:
                         if existing_approval.status == ApprovalStatus.PENDING:
                             state.status = AgentNodeState.WAITING
                             return
                         elif existing_approval.status == ApprovalStatus.DENIED:
-                            state.add_error(FailureCategory.AUTHORIZATION, "Policy Denied: Action was rejected by human approver")
+                            state.add_error(
+                                FailureCategory.AUTHORIZATION,
+                                "Policy Denied: Action was rejected by human approver",
+                            )
                             return
                         elif existing_approval.status == ApprovalStatus.APPROVED:
-                            pass # Proceed to execute
+                            pass  # Proceed to execute
                     else:
                         state.status = AgentNodeState.WAITING
                         approval = ApprovalRequest(
@@ -178,13 +202,15 @@ class ExecutionNode(BaseNode):
                             tool_name=tool.definition.name,
                             arguments=action.arguments,
                             reason=policy_decision.reason,
-                            status=ApprovalStatus.PENDING
+                            status=ApprovalStatus.PENDING,
                         )
                         db.add(approval)
                         await db.flush()
                         return
 
-            history_item = ActionHistoryItem(action=action, started_at=start_time, completed_at=None, error=None, result=None)
+            history_item = ActionHistoryItem(
+                action=action, started_at=start_time, completed_at=None, error=None, result=None
+            )
 
             try:
                 result = await tool.execute(action.arguments, context)
@@ -206,11 +232,14 @@ class ExecutionNode(BaseNode):
 
             state.action_history.append(history_item)
 
-            db = kwargs.get('db')
+            db = kwargs.get("db")
             if db:
                 import hashlib
                 import json
-                input_hash = hashlib.sha256(json.dumps(action.arguments, sort_keys=True).encode()).hexdigest()
+
+                input_hash = hashlib.sha256(
+                    json.dumps(action.arguments, sort_keys=True).encode()
+                ).hexdigest()
                 await persist_tool_audit(
                     db=db,
                     context=context,
@@ -220,12 +249,13 @@ class ExecutionNode(BaseNode):
                     completed_at=end_time,
                     duration_ms=int(duration_ms),
                     result=result,
-                    input_hash=input_hash
+                    input_hash=input_hash,
                 )
 
         await asyncio.gather(*[execute_action(a) for a in state.current_actions])
         state.current_actions = []
         return state
+
 
 class VerificationNode(BaseNode):
     def __init__(self, llm: Any):
@@ -242,6 +272,7 @@ class VerificationNode(BaseNode):
         state.status = AgentNodeState.UNDERSTANDING
         return state
 
+
 class DiagnoseNode(BaseNode):
     def __init__(self, llm: Any):
         self.llm = llm
@@ -253,6 +284,7 @@ class DiagnoseNode(BaseNode):
     async def _execute(self, state: AgentState, **kwargs: Any) -> AgentState:
         state.status = AgentNodeState.REPLANNING
         return state
+
 
 class ReplanNode(BaseNode):
     def __init__(self, llm: Any):
@@ -275,7 +307,10 @@ class ReplanNode(BaseNode):
         # 2. Check total tool calls
         if len(state.action_history) >= state.limits.max_tool_calls:
             state.status = AgentNodeState.FAILED
-            state.add_error(FailureCategory.BUSINESS_RULE, f"Max tool calls ({state.limits.max_tool_calls}) exceeded")
+            state.add_error(
+                FailureCategory.BUSINESS_RULE,
+                f"Max tool calls ({state.limits.max_tool_calls}) exceeded",
+            )
             return state
 
         # 3. Determine diagnosis

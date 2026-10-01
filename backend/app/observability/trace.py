@@ -11,6 +11,7 @@ class AgentTracer:
     """
     Records deterministic execution traces for the agent to ensure observability.
     """
+
     def __init__(self, db: AsyncSession, run_id: uuid.UUID, organization_id: uuid.UUID):
         self.db = db
         self.run_id = run_id
@@ -22,7 +23,7 @@ class AgentTracer:
         event_type: str,
         component: str,
         metadata: dict[str, Any] | None = None,
-        duration_ms: int | None = None
+        duration_ms: int | None = None,
     ):
         self.sequence += 1
         event = AgentTraceEvent(
@@ -33,7 +34,7 @@ class AgentTracer:
             component=component,
             metadata_=metadata,
             duration_ms=duration_ms,
-            timestamp=datetime.now(UTC)
+            timestamp=datetime.now(UTC),
         )
         self.db.add(event)
         # We don't commit immediately for every event to save I/O overhead.

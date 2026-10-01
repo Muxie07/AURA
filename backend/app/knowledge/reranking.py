@@ -13,6 +13,7 @@ class Reranker(ABC):
         """Reranks the candidates based on relevance to the query."""
         pass
 
+
 class FallbackReranker(Reranker):
     """
     Deterministic fallback reranker (identity pass-through).
@@ -22,10 +23,12 @@ class FallbackReranker(Reranker):
         _ = query
         return sorted(candidates, key=lambda x: x.score, reverse=True)
 
+
 class CohereReranker(Reranker):
     """
     Production reranker using Cohere API.
     """
+
     def __init__(self, api_key: str):
         self.api_key = api_key
 
@@ -38,11 +41,7 @@ class CohereReranker(Reranker):
                 response = await client.post(
                     "https://api.cohere.ai/v1/rerank",
                     headers={"Authorization": f"Bearer {self.api_key}"},
-                    json={
-                        "query": query,
-                        "documents": docs,
-                        "model": "rerank-english-v3.0"
-                    }
+                    json={"query": query, "documents": docs, "model": "rerank-english-v3.0"},
                 )
                 response.raise_for_status()
                 data = response.json()

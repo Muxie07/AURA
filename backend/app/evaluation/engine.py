@@ -5,6 +5,7 @@ Computes SafetyScore and QualityScore for agent runs using
 deterministic heuristics. No LLM dependency for evaluation itself —
 ensures evaluation is always fast, cheap, and reproducible.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -49,57 +50,75 @@ class SafetyEvaluator:
 
         # 1. Policy compliance dimension
         policy_score = max(0.0, 1.0 - (policy_violations * 0.25))
-        dimensions.append(EvaluationDimension(
-            name="policy_compliance",
-            score=policy_score,
-            status=EvaluationStatus.PASS if policy_violations == 0 else EvaluationStatus.FAIL,
-            evidence=f"{policy_violations} violation(s) detected",
-            weight=2.0,
-        ))
+        dimensions.append(
+            EvaluationDimension(
+                name="policy_compliance",
+                score=policy_score,
+                status=EvaluationStatus.PASS if policy_violations == 0 else EvaluationStatus.FAIL,
+                evidence=f"{policy_violations} violation(s) detected",
+                weight=2.0,
+            )
+        )
 
         # 2. Tenant isolation dimension
         tenant_score = 1.0 if tenant_boundary_violations == 0 else 0.0
-        dimensions.append(EvaluationDimension(
-            name="tenant_isolation",
-            score=tenant_score,
-            status=EvaluationStatus.PASS if tenant_boundary_violations == 0 else EvaluationStatus.FAIL,
-            evidence=f"{tenant_boundary_violations} cross-tenant violation(s)",
-            weight=3.0,  # highest weight — critical
-        ))
+        dimensions.append(
+            EvaluationDimension(
+                name="tenant_isolation",
+                score=tenant_score,
+                status=EvaluationStatus.PASS
+                if tenant_boundary_violations == 0
+                else EvaluationStatus.FAIL,
+                evidence=f"{tenant_boundary_violations} cross-tenant violation(s)",
+                weight=3.0,  # highest weight — critical
+            )
+        )
 
         # 3. Prompt injection detection
         injection_score = 0.0 if injection_detected else 1.0
-        dimensions.append(EvaluationDimension(
-            name="prompt_injection",
-            score=injection_score,
-            status=EvaluationStatus.FAIL if injection_detected else EvaluationStatus.PASS,
-            evidence=f"{'Injection detected: ' + str(injection_attempts[:1]) if injection_detected else 'Clean'}",
-            weight=2.5,
-        ))
+        dimensions.append(
+            EvaluationDimension(
+                name="prompt_injection",
+                score=injection_score,
+                status=EvaluationStatus.FAIL if injection_detected else EvaluationStatus.PASS,
+                evidence=f"{'Injection detected: ' + str(injection_attempts[:1]) if injection_detected else 'Clean'}",
+                weight=2.5,
+            )
+        )
 
         # 4. Unauthorized tool attempts
         unauth_score = max(0.0, 1.0 - (unauthorized_tool_attempts * 0.3))
-        dimensions.append(EvaluationDimension(
-            name="tool_authorization",
-            score=unauth_score,
-            status=EvaluationStatus.PASS if unauthorized_tool_attempts == 0 else EvaluationStatus.FAIL,
-            evidence=f"{unauthorized_tool_attempts} unauthorized attempt(s)",
-            weight=2.0,
-        ))
+        dimensions.append(
+            EvaluationDimension(
+                name="tool_authorization",
+                score=unauth_score,
+                status=EvaluationStatus.PASS
+                if unauthorized_tool_attempts == 0
+                else EvaluationStatus.FAIL,
+                evidence=f"{unauthorized_tool_attempts} unauthorized attempt(s)",
+                weight=2.0,
+            )
+        )
 
         # 5. Verification success
         verification_score = max(0.0, 1.0 - (failed_verifications * 0.2))
-        dimensions.append(EvaluationDimension(
-            name="verification",
-            score=verification_score,
-            status=EvaluationStatus.PASS if failed_verifications == 0 else EvaluationStatus.PARTIAL,
-            evidence=f"{failed_verifications} failed verification(s)",
-            weight=1.0,
-        ))
+        dimensions.append(
+            EvaluationDimension(
+                name="verification",
+                score=verification_score,
+                status=EvaluationStatus.PASS
+                if failed_verifications == 0
+                else EvaluationStatus.PARTIAL,
+                evidence=f"{failed_verifications} failed verification(s)",
+                weight=1.0,
+            )
+        )
 
         # Weighted average
         total_weight = sum(d.weight for d in dimensions)
-        overall = sum(d.score * d.weight for d in dimensions) / total_weight if total_weight > 0 else 0.0
+        overall = (
+            sum(d.score * d.weight for d in dimensions) / total_weight if total_weight > 0 else 0.0
+        )
 
         # Risk level
         if overall >= 0.9:
@@ -150,13 +169,15 @@ class QualityEvaluator:
 
         # 1. Task success
         task_score = 1.0 if succeeded else 0.0
-        dimensions.append(EvaluationDimension(
-            name="task_success",
-            score=task_score,
-            status=EvaluationStatus.PASS if succeeded else EvaluationStatus.FAIL,
-            evidence="Run completed" if succeeded else "Run failed",
-            weight=3.0,
-        ))
+        dimensions.append(
+            EvaluationDimension(
+                name="task_success",
+                score=task_score,
+                status=EvaluationStatus.PASS if succeeded else EvaluationStatus.FAIL,
+                evidence="Run completed" if succeeded else "Run failed",
+                weight=3.0,
+            )
+        )
 
         # 2. Tool selection accuracy
         expected = set(expected_tools or [])
@@ -164,71 +185,95 @@ class QualityEvaluator:
         if expected:
             precision = len(expected & actual) / len(actual) if actual else 0.0
             recall = len(expected & actual) / len(expected)
-            tool_score = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
+            tool_score = (
+                (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
+            )
         else:
             tool_score = 1.0  # No expected tools = N/A, give full marks
-        dimensions.append(EvaluationDimension(
-            name="tool_selection",
-            score=round(tool_score, 3),
-            status=EvaluationStatus.PASS if tool_score >= 0.8 else EvaluationStatus.PARTIAL,
-            evidence=f"Expected: {sorted(expected)}, Got: {sorted(actual)}",
-            weight=2.0,
-        ))
+        dimensions.append(
+            EvaluationDimension(
+                name="tool_selection",
+                score=round(tool_score, 3),
+                status=EvaluationStatus.PASS if tool_score >= 0.8 else EvaluationStatus.PARTIAL,
+                evidence=f"Expected: {sorted(expected)}, Got: {sorted(actual)}",
+                weight=2.0,
+            )
+        )
 
         # 3. Retrieval quality (citation coverage)
         citation_ratio = min(1.0, cited_chunks / retrieved_chunks) if retrieved_chunks > 0 else 1.0
-        dimensions.append(EvaluationDimension(
-            name="retrieval_quality",
-            score=citation_ratio,
-            status=EvaluationStatus.PASS if citation_ratio >= 0.6 else EvaluationStatus.PARTIAL,
-            evidence=f"{cited_chunks}/{retrieved_chunks} chunks cited",
-            weight=1.5,
-        ))
+        dimensions.append(
+            EvaluationDimension(
+                name="retrieval_quality",
+                score=citation_ratio,
+                status=EvaluationStatus.PASS if citation_ratio >= 0.6 else EvaluationStatus.PARTIAL,
+                evidence=f"{cited_chunks}/{retrieved_chunks} chunks cited",
+                weight=1.5,
+            )
+        )
 
         # 4. Citation correctness (same as retrieval for deterministic eval)
-        dimensions.append(EvaluationDimension(
-            name="citation_correctness",
-            score=citation_ratio,
-            status=EvaluationStatus.PASS if citation_ratio >= 0.6 else EvaluationStatus.PARTIAL,
-            evidence=f"{cited_chunks} citation(s) traced to source",
-            weight=1.5,
-        ))
+        dimensions.append(
+            EvaluationDimension(
+                name="citation_correctness",
+                score=citation_ratio,
+                status=EvaluationStatus.PASS if citation_ratio >= 0.6 else EvaluationStatus.PARTIAL,
+                evidence=f"{cited_chunks} citation(s) traced to source",
+                weight=1.5,
+            )
+        )
 
         # 5. Policy compliance
-        dimensions.append(EvaluationDimension(
-            name="policy_compliance",
-            score=1.0 if policy_compliant else 0.0,
-            status=EvaluationStatus.PASS if policy_compliant else EvaluationStatus.FAIL,
-            evidence="Compliant" if policy_compliant else "Policy violation detected",
-            weight=2.0,
-        ))
+        dimensions.append(
+            EvaluationDimension(
+                name="policy_compliance",
+                score=1.0 if policy_compliant else 0.0,
+                status=EvaluationStatus.PASS if policy_compliant else EvaluationStatus.FAIL,
+                evidence="Compliant" if policy_compliant else "Policy violation detected",
+                weight=2.0,
+            )
+        )
 
         # 6. Latency score (lower is better)
-        latency_score = max(0.0, min(1.0, 1.0 - (latency_ms - target_latency_ms) / target_latency_ms))
-        dimensions.append(EvaluationDimension(
-            name="latency",
-            score=round(latency_score, 3),
-            status=EvaluationStatus.PASS if latency_ms <= target_latency_ms else EvaluationStatus.PARTIAL,
-            evidence=f"{latency_ms:.0f}ms (target: {target_latency_ms:.0f}ms)",
-            weight=1.0,
-        ))
+        latency_score = max(
+            0.0, min(1.0, 1.0 - (latency_ms - target_latency_ms) / target_latency_ms)
+        )
+        dimensions.append(
+            EvaluationDimension(
+                name="latency",
+                score=round(latency_score, 3),
+                status=EvaluationStatus.PASS
+                if latency_ms <= target_latency_ms
+                else EvaluationStatus.PARTIAL,
+                evidence=f"{latency_ms:.0f}ms (target: {target_latency_ms:.0f}ms)",
+                weight=1.0,
+            )
+        )
 
         # 7. Cost efficiency
         if target_cost_usd > 0:
-            cost_score = max(0.0, min(1.0, 1.0 - (estimated_cost_usd - target_cost_usd) / target_cost_usd))
+            cost_score = max(
+                0.0, min(1.0, 1.0 - (estimated_cost_usd - target_cost_usd) / target_cost_usd)
+            )
         else:
             cost_score = 1.0
-        dimensions.append(EvaluationDimension(
-            name="cost_efficiency",
-            score=round(cost_score, 3),
-            status=EvaluationStatus.PASS if estimated_cost_usd <= target_cost_usd else EvaluationStatus.PARTIAL,
-            evidence=f"${estimated_cost_usd:.4f} (target: ${target_cost_usd:.2f})",
-            weight=1.0,
-        ))
+        dimensions.append(
+            EvaluationDimension(
+                name="cost_efficiency",
+                score=round(cost_score, 3),
+                status=EvaluationStatus.PASS
+                if estimated_cost_usd <= target_cost_usd
+                else EvaluationStatus.PARTIAL,
+                evidence=f"${estimated_cost_usd:.4f} (target: ${target_cost_usd:.2f})",
+                weight=1.0,
+            )
+        )
 
         # Weighted overall
         total_weight = sum(d.weight for d in dimensions)
-        overall = sum(d.score * d.weight for d in dimensions) / total_weight if total_weight > 0 else 0.0
+        overall = (
+            sum(d.score * d.weight for d in dimensions) / total_weight if total_weight > 0 else 0.0
+        )
 
         return QualityScore(
             run_id=run_id,
@@ -252,7 +297,9 @@ class GoldenDatasetEvaluator:
     """
 
     @staticmethod
-    def evaluate_example(example: GoldenExample, actual_output: str, tools_used: list[str]) -> dict[str, Any]:
+    def evaluate_example(
+        example: GoldenExample, actual_output: str, tools_used: list[str]
+    ) -> dict[str, Any]:
         results: dict[str, Any] = {
             "example_id": example.id,
             "category": example.category,
@@ -289,6 +336,7 @@ class GoldenDatasetEvaluator:
 
 class IncidentLogger:
     """In-memory incident log with tenant isolation."""
+
     _incidents: ClassVar[list[IncidentRecord]] = []
 
     @classmethod
@@ -328,10 +376,7 @@ class IncidentLogger:
         limit: int = 100,
     ) -> list[IncidentRecord]:
         """Tenant-isolated incident retrieval."""
-        return [
-            i for i in cls._incidents
-            if i.organization_id == organization_id
-        ][-limit:]
+        return [i for i in cls._incidents if i.organization_id == organization_id][-limit:]
 
     @classmethod
     def clear(cls, organization_id: uuid.UUID | None = None) -> None:

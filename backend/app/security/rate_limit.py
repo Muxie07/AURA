@@ -9,12 +9,14 @@ from app.config.settings import get_settings
 # Global Redis client for rate limiting
 _redis_client: aioredis.Redis | None = None
 
+
 async def get_redis_client() -> aioredis.Redis:
     global _redis_client
     if _redis_client is None:
         settings = get_settings()
         _redis_client = aioredis.from_url(settings.redis_url)
     return _redis_client
+
 
 async def rate_limit_dependency(request: Request) -> None:
     """
@@ -55,5 +57,5 @@ async def rate_limit_dependency(request: Request) -> None:
         raise HTTPException(
             status_code=HTTP_429_TOO_MANY_REQUESTS,
             detail="Too Many Requests",
-            headers={"Retry-After": str(window)}
+            headers={"Retry-After": str(window)},
         )

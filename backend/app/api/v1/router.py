@@ -3,19 +3,20 @@ AURA API v1 - Router.
 
 Aggregates all v1 endpoint routers.
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.v1.runs import router as runs_router
-from app.api.v1.auth import router as auth_router
 from app.api.v1.ai import router as ai_router
+from app.api.v1.auth import router as auth_router
 from app.api.v1.conversations import router as conversations_router
 from app.api.v1.eval import router as eval_router
+from app.api.v1.forecasting import router as forecasting_router
 from app.api.v1.health import router as health_router
 from app.api.v1.knowledge import router as knowledge_router
+from app.api.v1.runs import router as runs_router
 from app.api.v1.settings import router as settings_router
-from app.api.v1.forecasting import router as forecasting_router
 from app.tools.mcp.routes import mcp_router
 
 api_v1_router = APIRouter(prefix="/api/v1")

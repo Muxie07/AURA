@@ -13,12 +13,14 @@ Covers:
  9. Unauthorized access (no org context)
 10. Conversation integration (tool registered and callable)
 """
+
 from __future__ import annotations
 
 import json
 import uuid
+from datetime import UTC
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -26,10 +28,10 @@ from app.tools.builtin import register_builtin_tools
 from app.tools.registry import ToolRegistry
 from app.tools.schemas import RiskLevel, ToolContext
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def registry() -> ToolRegistry:
@@ -131,6 +133,7 @@ def _make_redis_mock(org_id: uuid.UUID, metrics: list[dict]) -> AsyncMock:
 # 1. Tool registration
 # ---------------------------------------------------------------------------
 
+
 def test_observability_tool_is_registered(registry: ToolRegistry) -> None:
     """observability.get_api_latency must be discoverable in the registry."""
     definitions = {d.name for d in registry.list_definitions()}
@@ -147,6 +150,7 @@ def test_observability_tool_is_read_only(registry: ToolRegistry) -> None:
 # 2. Input validation
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_valid_input_accepted(registry: ToolRegistry, tool_context: ToolContext) -> None:
     with patch("app.security.rate_limit.get_redis_client") as mock_get:
@@ -160,7 +164,9 @@ async def test_valid_input_accepted(registry: ToolRegistry, tool_context: ToolCo
 
 
 @pytest.mark.asyncio
-async def test_missing_time_range_fails_validation(registry: ToolRegistry, tool_context: ToolContext) -> None:
+async def test_missing_time_range_fails_validation(
+    registry: ToolRegistry, tool_context: ToolContext
+) -> None:
     result = await registry.execute(
         "observability.get_api_latency",
         {},  # time_range is required
@@ -173,6 +179,7 @@ async def test_missing_time_range_fails_validation(registry: ToolRegistry, tool_
 # ---------------------------------------------------------------------------
 # 3. Tenant isolation
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_tenant_isolation(
@@ -198,7 +205,9 @@ async def test_tenant_isolation(
         async def get_redis_for_org(*args, **kwargs):
             redis_mock = AsyncMock()
             # The key used will contain the calling org's ID — mock returns appropriate data
-            redis_mock.lrange = AsyncMock(return_value=[json.dumps(m).encode() for m in SAMPLE_METRICS])
+            redis_mock.lrange = AsyncMock(
+                return_value=[json.dumps(m).encode() for m in SAMPLE_METRICS]
+            )
             return redis_mock
 
         mock_get.side_effect = get_redis_for_org
@@ -218,6 +227,7 @@ async def test_tenant_isolation(
 # ---------------------------------------------------------------------------
 # 4. Real latency retrieval
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_real_latency_retrieval(
@@ -269,6 +279,7 @@ async def test_endpoint_prefix_filter(
 # 5. No-data scenario
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_no_data_returns_friendly_message(
     registry: ToolRegistry, tool_context: ToolContext
@@ -295,10 +306,13 @@ async def test_no_data_returns_friendly_message(
 # 6. Planner selecting observability tool
 # ---------------------------------------------------------------------------
 
+
 def test_planner_prompt_includes_observability_tool() -> None:
     """The planner system prompt must mention the observability tool."""
     import inspect
+
     from app.agents.planning.planner import PlanNode
+
     source = inspect.getsource(PlanNode)
     assert "observability.get_api_latency" in source
 
@@ -307,12 +321,16 @@ def test_planner_prompt_includes_observability_tool() -> None:
 # 7. Structured fallback response generator
 # ---------------------------------------------------------------------------
 
+
 def _make_state_with_latency_result(data: dict) -> Any:
     """Build a minimal AgentState-like mock with history items."""
+    from datetime import datetime
+
     from app.agents.core.state import (
-        ActionHistoryItem, AgentAction, AgentNodeState, AgentPlan, AgentState
+        ActionHistoryItem,
+        AgentAction,
+        AgentState,
     )
-    from datetime import datetime, timezone
 
     action = AgentAction(
         action_id="step_1",
@@ -323,8 +341,8 @@ def _make_state_with_latency_result(data: dict) -> Any:
     )
     history_item = ActionHistoryItem(
         action=action,
-        started_at=datetime.now(timezone.utc),
-        completed_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
+        completed_at=datetime.now(UTC),
         error=None,
         result=data,
     )
@@ -405,6 +423,7 @@ def test_structured_fallback_high_latency_warning() -> None:
 # 8. Tool failure (Redis unavailable)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_redis_failure_returns_failed_result(
     registry: ToolRegistry, tool_context: ToolContext
@@ -423,6 +442,7 @@ async def test_redis_failure_returns_failed_result(
 # 9. Unauthorized access — no organization context
 # ---------------------------------------------------------------------------
 
+
 def test_observability_tool_is_organization_scoped(registry: ToolRegistry) -> None:
     executor = registry.get("observability.get_api_latency")
     assert executor.definition.organization_scoped is True
@@ -431,6 +451,7 @@ def test_observability_tool_is_organization_scoped(registry: ToolRegistry) -> No
 # ---------------------------------------------------------------------------
 # 10. Conversation integration — tool available in list
 # ---------------------------------------------------------------------------
+
 
 def test_observability_in_tool_definitions(registry: ToolRegistry) -> None:
     names = [d.name for d in registry.list_definitions()]

@@ -4,6 +4,7 @@ AURA Phase 9 — Benchmarking Engine.
 Provides deterministic model benchmarking without live LLM calls.
 Uses pre-computed mock results for test environments.
 """
+
 from __future__ import annotations
 
 from app.evaluation.schemas import BenchmarkResult
@@ -140,7 +141,8 @@ class BenchmarkEngine:
         This is the core of cost-intelligent model routing.
         """
         candidates = [
-            r for r in BENCHMARK_REFERENCE
+            r
+            for r in BENCHMARK_REFERENCE
             if r.task_type == task_type
             and r.success_rate >= min_success_rate
             and r.avg_cost_usd <= max_cost_usd
@@ -148,9 +150,9 @@ class BenchmarkEngine:
         if not candidates:
             # Relax cost constraint, just get highest success rate
             candidates = [
-                r for r in BENCHMARK_REFERENCE
-                if r.task_type == task_type
-                and r.success_rate >= min_success_rate
+                r
+                for r in BENCHMARK_REFERENCE
+                if r.task_type == task_type and r.success_rate >= min_success_rate
             ]
         if not candidates:
             return None

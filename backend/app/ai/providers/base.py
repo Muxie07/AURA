@@ -8,6 +8,7 @@ from app.ai.schemas.generation import GenerationRequest, GenerationResult
 
 T = TypeVar("T", bound=BaseModel)
 
+
 class LLMProvider(ABC):
     """Abstract interface for all LLM providers."""
 
@@ -35,9 +36,7 @@ class LLMProvider(ABC):
         pass
 
     @abstractmethod
-    def stream(
-        self, request: GenerationRequest
-    ) -> AsyncGenerator[str, None]:
+    def stream(self, request: GenerationRequest) -> AsyncGenerator[str, None]:
         """Stream a text response."""
         pass
 

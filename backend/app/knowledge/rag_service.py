@@ -12,9 +12,11 @@ from app.knowledge.retrieval import RetrievalResult, Retriever
 
 logger = structlog.get_logger(__name__)
 
+
 class RAGResponse(BaseModel):
     answer: str
     sources: list[RetrievalResult]
+
 
 class RAGService:
     """Orchestrates the entire RAG pipeline: retrieval -> reranking -> context -> generation."""
@@ -27,10 +29,7 @@ class RAGService:
         self.context_builder = ContextBuilder()
 
     async def query(
-        self,
-        organization_id: uuid.UUID,
-        knowledge_base_id: uuid.UUID,
-        question: str
+        self, organization_id: uuid.UUID, knowledge_base_id: uuid.UUID, question: str
     ) -> RAGResponse:
 
         # Expand query
@@ -38,7 +37,7 @@ class RAGService:
         try:
             expanded_query = await self.llm.generate_simple(
                 prompt=f"Generate synonyms and closely related keywords for this query: '{question}'. Return a single string with the original query and the new keywords, space-separated.",
-                system_prompt="You are a search query expansion assistant. Return ONLY the expanded query string, no other text."
+                system_prompt="You are a search query expansion assistant. Return ONLY the expanded query string, no other text.",
             )
             if not expanded_query.strip():
                 expanded_query = question
@@ -51,7 +50,7 @@ class RAGService:
             organization_id=organization_id,
             knowledge_base_id=knowledge_base_id,
             query=expanded_query,
-            top_k=10
+            top_k=10,
         )
 
         # 2. Rerank
@@ -63,7 +62,7 @@ class RAGService:
         if not final_results:
             return RAGResponse(
                 answer="I couldn't find any relevant information in the knowledge base to answer your question.",
-                sources=[]
+                sources=[],
             )
 
         # 3. Build context
@@ -84,19 +83,17 @@ class RAGService:
         )
 
         from app.config.settings import get_settings
+
         settings = get_settings()
         request = GenerationRequest(
             model=settings.reasoning_model,
             messages=[
                 Message(role="system", content=system_prompt),
-                Message(role="user", content=question)
+                Message(role="user", content=question),
             ],
-            temperature=0.0
+            temperature=0.0,
         )
 
         generation_result = await self.llm.generate(request)
 
-        return RAGResponse(
-            answer=generation_result.text,
-            sources=final_results
-        )
+        return RAGResponse(answer=generation_result.text, sources=final_results)

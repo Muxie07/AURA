@@ -4,6 +4,7 @@ AURA Observability Tool — read-only API latency & metrics retrieval.
 Reads real request metrics stored in Redis by the RequestIDMiddleware.
 Enforces strict tenant isolation: data is keyed by organization_id.
 """
+
 from __future__ import annotations
 
 import json
@@ -11,7 +12,6 @@ from typing import Any
 
 from app.tools.executor import InternalToolExecutor
 from app.tools.schemas import RiskLevel, ToolContext, ToolDefinition
-
 
 # ---------------------------------------------------------------------------
 # Tool definition
@@ -56,9 +56,8 @@ _OBSERVABILITY_DEF = ToolDefinition(
 # Handler
 # ---------------------------------------------------------------------------
 
-async def _observability_handler(
-    arguments: dict[str, Any], context: ToolContext
-) -> dict[str, Any]:
+
+async def _observability_handler(arguments: dict[str, Any], context: ToolContext) -> dict[str, Any]:
     """
     Read latency metrics from Redis for the requesting tenant.
 

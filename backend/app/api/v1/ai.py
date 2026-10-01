@@ -10,8 +10,10 @@ from app.security.rate_limit import rate_limit_dependency
 
 router = APIRouter()
 
+
 class GenerateRequest(BaseModel):
     message: str = Field(..., description="The message to send to the AI.")
+
 
 class GenerateResponse(BaseModel):
     text: str
@@ -19,14 +21,19 @@ class GenerateResponse(BaseModel):
     provider: str
     usage: dict[str, int | float | None]
 
+
 class ClassifyRequest(BaseModel):
     text: str = Field(..., description="The text to classify.")
+
 
 class IntentResult(BaseModel):
     intent: str
     confidence: float
 
-@router.post("/generate", response_model=GenerateResponse, dependencies=[Depends(rate_limit_dependency)])
+
+@router.post(
+    "/generate", response_model=GenerateResponse, dependencies=[Depends(rate_limit_dependency)]
+)
 async def test_generate(
     request: GenerateRequest,
 ) -> Any:
@@ -47,7 +54,10 @@ async def test_generate(
         "usage": result.usage.model_dump(),
     }
 
-@router.post("/classify", response_model=IntentResult, dependencies=[Depends(rate_limit_dependency)])
+
+@router.post(
+    "/classify", response_model=IntentResult, dependencies=[Depends(rate_limit_dependency)]
+)
 async def test_classify(
     request: ClassifyRequest,
 ) -> Any:

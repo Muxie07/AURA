@@ -10,6 +10,7 @@ Tests CRUD operations on the conversations endpoints including:
 - Message sub-resource
 - Error handling (not found, validation)
 """
+
 from __future__ import annotations
 
 import uuid

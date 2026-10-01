@@ -18,6 +18,7 @@ from app.config.settings import get_settings
 
 T = TypeVar("T", bound=BaseModel)
 
+
 class OpenAIProvider(LLMProvider):
     """OpenAI implementation of the LLMProvider interface."""
 
@@ -26,7 +27,11 @@ class OpenAIProvider(LLMProvider):
         api_key = settings.openai_api_key.get_secret_value() if settings.openai_api_key else None
         if not api_key:
             from fastapi import HTTPException
-            raise HTTPException(status_code=400, detail="AURA AI provider is not configured. Check the LLM provider and API key.")
+
+            raise HTTPException(
+                status_code=400,
+                detail="AURA AI provider is not configured. Check the LLM provider and API key.",
+            )
 
         self.client = openai.AsyncOpenAI(
             api_key=api_key,

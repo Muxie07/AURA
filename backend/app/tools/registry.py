@@ -19,12 +19,13 @@ from app.tools.schemas import RiskLevel, ToolContext, ToolDefinition, ToolResult
 
 logger = structlog.get_logger(__name__)
 
+
 class ToolRegistry:
     def __init__(self) -> None:
         self._tools: dict[str, BaseToolExecutor] = {}
         self.mcp_initialized = False
 
-    async def ensure_mcp_initialized(self, organization_id) -> None:
+    async def ensure_mcp_initialized(self, _organization_id) -> None:
         # MCP initialization bypassed to prevent anyio cancel scope crashes
         self.mcp_initialized = True
         return
@@ -44,7 +45,9 @@ class ToolRegistry:
     def list_definitions(self) -> list[ToolDefinition]:
         return [ex.definition for ex in self._tools.values()]
 
-    async def execute(self, name: str, arguments: dict[str, Any], context: ToolContext) -> ToolResult:
+    async def execute(
+        self, name: str, arguments: dict[str, Any], context: ToolContext
+    ) -> ToolResult:
         executor = self.get(name)
         definition = executor.definition
 
@@ -56,21 +59,35 @@ class ToolRegistry:
         try:
             jsonschema.validate(instance=arguments, schema=definition.input_schema)
         except jsonschema.ValidationError as e:
-            return ToolResult(status="failed", error_type="validation_error", message=f"Input validation failed: {e.message}")
+            return ToolResult(
+                status="failed",
+                error_type="validation_error",
+                message=f"Input validation failed: {e.message}",
+            )
 
         # 2. Authorization & Tenant Isolation
         if definition.organization_scoped:
             if "organization_id" in arguments:
                 arg_org = arguments["organization_id"]
                 if str(arg_org) != str(context.organization_id):
-                    logger.error("tool.auth.tenant_mismatch", expected=str(context.organization_id), got=str(arg_org))
-                    raise ToolAuthorizationError("Tenant isolation violation: tool argument organization_id does not match context.")
+                    logger.error(
+                        "tool.auth.tenant_mismatch",
+                        expected=str(context.organization_id),
+                        got=str(arg_org),
+                    )
+                    raise ToolAuthorizationError(
+                        "Tenant isolation violation: tool argument organization_id does not match context."
+                    )
             else:
                 arguments["organization_id"] = str(context.organization_id)
 
-        if definition.requires_approval or definition.risk_level in [RiskLevel.WRITE, RiskLevel.EXTERNAL_SIDE_EFFECT]:
-            if not context.approved:
-                raise ToolAuthorizationError(f"Tool {name} requires explicit approval before execution.")
+        if (
+            definition.requires_approval
+            or definition.risk_level in [RiskLevel.WRITE, RiskLevel.EXTERNAL_SIDE_EFFECT]
+        ) and not context.approved:
+            raise ToolAuthorizationError(
+                f"Tool {name} requires explicit approval before execution."
+            )
 
         input_hash = hashlib.sha256(json.dumps(arguments, sort_keys=True).encode()).hexdigest()
 
@@ -83,10 +100,15 @@ class ToolRegistry:
 
         if definition.idempotent and context.idempotency_key and session_factory:
             async with session_factory() as db:
-                existing_audit = await check_idempotency_key(db, context.organization_id, context.idempotency_key)
+                existing_audit = await check_idempotency_key(
+                    db, context.organization_id, context.idempotency_key
+                )
                 if existing_audit:
                     logger.info("tool.execution.idempotent_hit", tool_name=name)
-                    return ToolResult(status="succeeded", result={"_idempotency_hit": True, "message": "Idempotent execution hit."})
+                    return ToolResult(
+                        status="succeeded",
+                        result={"_idempotency_hit": True, "message": "Idempotent execution hit."},
+                    )
 
         # 4. Executing
         result = None
@@ -98,24 +120,61 @@ class ToolRegistry:
 
             if session_factory:
                 async with session_factory() as db:
-                    await persist_tool_audit(db, context, definition, arguments, started_at, datetime.now(UTC), duration_ms, result, input_hash)
+                    await persist_tool_audit(
+                        db,
+                        context,
+                        definition,
+                        arguments,
+                        started_at,
+                        datetime.now(UTC),
+                        duration_ms,
+                        result,
+                        input_hash,
+                    )
 
             return result
         except ToolError as e:
             duration_ms = int((time.perf_counter() - start_time) * 1000)
             logger.error("tool.execution.failed", tool_name=name, error=e.message)
-            result = ToolResult(status="failed", error_type=e.error_type, message=e.message, retryable=e.retryable)
+            result = ToolResult(
+                status="failed", error_type=e.error_type, message=e.message, retryable=e.retryable
+            )
 
             if session_factory:
                 async with session_factory() as db:
-                    await persist_tool_audit(db, context, definition, arguments, started_at, datetime.now(UTC), duration_ms, result, input_hash)
+                    await persist_tool_audit(
+                        db,
+                        context,
+                        definition,
+                        arguments,
+                        started_at,
+                        datetime.now(UTC),
+                        duration_ms,
+                        result,
+                        input_hash,
+                    )
             return result
         except Exception as e:
             duration_ms = int((time.perf_counter() - start_time) * 1000)
             logger.error("tool.execution.failed_unhandled", tool_name=name, error=str(e))
-            result = ToolResult(status="failed", error_type="unknown_error", message="An unexpected error occurred.", retryable=False)
+            result = ToolResult(
+                status="failed",
+                error_type="unknown_error",
+                message="An unexpected error occurred.",
+                retryable=False,
+            )
 
             if session_factory:
                 async with session_factory() as db:
-                    await persist_tool_audit(db, context, definition, arguments, started_at, datetime.now(UTC), duration_ms, result, input_hash)
+                    await persist_tool_audit(
+                        db,
+                        context,
+                        definition,
+                        arguments,
+                        started_at,
+                        datetime.now(UTC),
+                        duration_ms,
+                        result,
+                        input_hash,
+                    )
             return result
