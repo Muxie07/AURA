@@ -1,0 +1,148 @@
+# =============================================================================
+# AURA — .gitignore
+# =============================================================================
+
+# Environment variables (NEVER commit)
+.env*
+!.env.example
+*.env
+
+# =============================================================================
+# Python
+# =============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+/lib/
+/lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.env.bak/
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Ruff
+.ruff_cache/
+
+# =============================================================================
+# Node / Frontend
+# =============================================================================
+node_modules/
+.pnp
+.pnp.js
+.yarn/install-state.gz
+.next/
+out/
+.nuxt/
+dist/
+.cache/
+.parcel-cache/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.local
+.vercel
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# =============================================================================
+# Docker
+# =============================================================================
+docker-compose.override.yml
+
+# =============================================================================
+# Databases
+# =============================================================================
+*.db
+*.sqlite
+*.sqlite3
+pgdata/
+redisdata/
+
+# =============================================================================
+# IDE / Editor
+# =============================================================================
+.idea/
+.vscode/settings.json
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+.project
+.classpath
+
+# =============================================================================
+# Logs
+# =============================================================================
+logs/
+*.log
+log/
+
+# =============================================================================
+# Test artifacts
+# =============================================================================
+.pytest_cache/
+test-results/
+evaluation/reports/*.json
+evaluation/reports/*.html
+
+# =============================================================================
+# Secrets / Keys
+# =============================================================================
+*.pem
+*.key
+*.cert
+*.p12
+secrets/
+
+# =============================================================================
+# Alembic
+# =============================================================================
+# Keep migrations directory but not pycache inside it
+backend/migrations/__pycache__/

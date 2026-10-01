@@ -1,0 +1,234 @@
+# =============================================================================
+# AURA — Docker Compose
+# Local development environment
+# =============================================================================
+
+version: "3.9"
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL with pgvector extension
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: aura-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aura}
+      POSTGRES_USER: ${POSTGRES_USER:-aura}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aura-dev-password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aura} -d ${POSTGRES_DB:-aura}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - aura-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # Redis — caching, rate limiting, task queue (Phase 1: ready, not required)
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: aura-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aura-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # AURA Backend — FastAPI
+  # ---------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Database Migrations (Alembic)
+  # ---------------------------------------------------------------------------
+  db-migration:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: aura-db-migration
+    command: alembic upgrade head
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - aura-network
+
+  # ---------------------------------------------------------------------------
+  # AURA MCP Server (Phase 5.1)
+  # ---------------------------------------------------------------------------
+  mcp-server:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: aura-mcp
+    restart: unless-stopped
+    command: uvicorn app.mcp_main:app --host 0.0.0.0 --port 8000
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      MCP_SERVER_URL: http://mcp-server:8000/api/v1/mcp/messages
+      PRIMARY_LLM_PROVIDER: google
+      FALLBACK_LLM_PROVIDER: heuristic
+      PRIMARY_LLM_MODEL: gemini-3.5-flash
+      FALLBACK_LLM_MODEL: heuristic-fallback
+      FAST_MODEL: gemini-3.5-flash
+      REASONING_MODEL: gemini-3.5-flash
+    # Not exposed directly to host to enforce internal boundary
+    expose:
+      - "8000"
+    volumes:
+      - ./backend:/app
+      - /app/.venv
+    depends_on:
+      postgres:
+        condition: service_healthy
+      db-migration:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - aura-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: aura-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Override host-based postgres/redis addresses for docker networking
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      AURA_ENV: development
+      MCP_SERVER_URL: http://mcp-server:8000/api/v1/mcp/messages
+      PRIMARY_LLM_PROVIDER: google
+      FALLBACK_LLM_PROVIDER: heuristic
+      PRIMARY_LLM_MODEL: gemini-3.5-flash
+      FALLBACK_LLM_MODEL: heuristic-fallback
+      FAST_MODEL: gemini-3.5-flash
+      REASONING_MODEL: gemini-3.5-flash
+    ports:
+      - "${AURA_API_PORT:-8000}:8000"
+    volumes:
+      # Hot-reload in development: mount source code
+      - ./backend:/app
+      - /app/.venv  # Exclude venv from mount
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      db-migration:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - aura-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # AURA Frontend — Next.js
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+    container_name: aura-frontend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - aura-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  pgdata:
+    driver: local
+  redisdata:
+    driver: local
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  aura-network:
+    driver: bridge
+    name: aura-network
