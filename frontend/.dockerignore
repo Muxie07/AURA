@@ -1,3 +1,9 @@
-.next
-node_modules
+.env*
 .git
+.gitignore
+tests/
+node_modules/
+.next/
+*.md
+!README.md
+docs/
