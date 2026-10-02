@@ -172,7 +172,7 @@ def create_app() -> FastAPI:
         # Contact info for OpenAPI spec
         contact={
             "name": "AURA Engineering",
-            "url": "https://github.com/your-org/aura",
+            "url": "https://github.com/aura-sre/aura",
         },
         license_info={
             "name": "MIT",
