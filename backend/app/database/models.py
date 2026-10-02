@@ -485,6 +485,7 @@ class AgentRun(TimestampMixin, Base):
     completed_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
 
     # Input
+    legal_hold: Mapped[bool] = mapped_column(sa.Boolean, server_default=sa.text("false"), nullable=False)
     user_request: Mapped[str] = mapped_column(
         Text,
         nullable=False,

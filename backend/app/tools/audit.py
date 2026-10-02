@@ -68,6 +68,7 @@ async def persist_tool_audit(
         status=status,
         idempotency_key=context.idempotency_key,
         args_hash=input_hash,
+        request_id=context.request_id,
         started_at=started_at,
         completed_at=completed_at,
         duration_ms=duration_ms,

@@ -22,6 +22,42 @@ if TYPE_CHECKING:
     from structlog.types import EventDict, Processor
 
 
+
+def _redact_secrets(logger, method, event_dict):
+    """Redact sensitive fields from logs."""
+    sensitive_keys = {"authorization", "api_key", "password", "token", "secret", "session"}
+
+    def _redact(data):
+        if isinstance(data, dict):
+            for k, v in data.items():
+                if any(s in k.lower() for s in sensitive_keys):
+                    data[k] = "[REDACTED]"
+                elif isinstance(v, (dict, list)):
+                    _redact(v)
+        elif isinstance(data, list):
+            for _, item in enumerate(data):
+                if isinstance(item, (dict, list)):
+                    _redact(item)
+        return data
+
+    return _redact(event_dict)
+
+def _redact_prompts(logger, method, event_dict):
+    """Do not log full prompts or tool args in production by default."""
+    from app.config.settings import get_settings
+    settings = get_settings()
+    if not settings.aura_debug:
+        for key in ["prompt", "messages", "content", "tool_arguments", "arguments"]:
+            if key in event_dict:
+                val = event_dict[key]
+                if isinstance(val, str) and len(val) > 100:
+                    event_dict[key] = val[:100] + "... [TRUNCATED]"
+                elif isinstance(val, list):
+                    event_dict[key] = "[TRUNCATED LIST]"
+                elif isinstance(val, dict):
+                    event_dict[key] = "[TRUNCATED DICT]"
+    return event_dict
+
 def _add_service_context(
     logger: logging.Logger,
     method: str,
@@ -61,6 +97,8 @@ def configure_logging() -> None:
         structlog.stdlib.PositionalArgumentsFormatter(),
         structlog.processors.TimeStamper(fmt="iso", utc=True),
         structlog.processors.StackInfoRenderer(),
+        _redact_secrets,
+        _redact_prompts,
         _add_service_context,
         _drop_color_message_key,
     ]

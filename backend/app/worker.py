@@ -27,6 +27,16 @@ async def shutdown(ctx):
 
 async def run_agent(ctx, run_id_str: str):
     run_id = uuid.UUID(run_id_str)
+    
+    import structlog
+    structlog.contextvars.clear_contextvars()
+    trace_id = f"worker_{uuid.uuid4().hex[:12]}"
+    structlog.contextvars.bind_contextvars(
+        run_id=str(run_id),
+        trace_id=trace_id,
+        request_id=trace_id,
+    )
+
     session_factory = ctx["session_factory"]
     llm = ctx["llm"]
 

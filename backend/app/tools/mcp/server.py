@@ -105,6 +105,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         dry_run=arguments.pop("_dry_run", False),
         idempotency_key=arguments.pop("_idempotency_key", None),
         approved=arguments.pop("_approved", False),
+        request_id=__import__("structlog").contextvars.get_contextvars().get("request_id"),
     )
 
     from app.policy.engine import PolicyEngine

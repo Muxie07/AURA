@@ -146,6 +146,16 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> ORJSO
         path=str(request.url),
     )
 
+    # Sentry integration stub (scrub PII)
+    if hasattr(settings, "sentry_dsn") and settings.sentry_dsn:
+        try:
+            import sentry_sdk
+            with sentry_sdk.push_scope() as scope:
+                scope.set_tag("path", str(request.url))
+                sentry_sdk.capture_exception(exc)
+        except ImportError:
+            pass
+
     message = "An unexpected internal error occurred."
     details: dict[str, Any] | None = None
 

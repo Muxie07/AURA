@@ -91,7 +91,13 @@ def create_engine() -> AsyncEngine:
         pool_size=settings.aura_db_pool_size,
         max_overflow=settings.aura_db_max_overflow,
         pool_timeout=settings.aura_db_pool_timeout,
-        pool_pre_ping=True,  # Validate connections before use
+        pool_pre_ping=True,
+        connect_args={
+            "server_settings": {
+                "statement_timeout": "30000",
+                "idle_in_transaction_session_timeout": "60000",
+            }
+        },
         echo=settings.aura_debug,  # Log SQL in debug mode
         # JSON serialization through orjson for performance
         json_serializer=_json_serializer,

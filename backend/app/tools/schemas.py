@@ -38,6 +38,7 @@ class ToolContext(BaseModel):
     dry_run: bool = False
     idempotency_key: str | None = None
     user_id: uuid.UUID | None = None
+    request_id: str | None = None
     approved: bool = False
 
 
