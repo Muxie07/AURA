@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+        working-directory: backend
+      - name: Ruff Format Check
+        run: ruff format --check .
+        working-directory: backend
+      - name: Ruff Lint
+        run: ruff check .
+        working-directory: backend
+      - name: Mypy
+        run: mypy app
+        working-directory: backend
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: aura
+          POSTGRES_PASSWORD: aura-dev-password
+          POSTGRES_DB: aura_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+        working-directory: backend
+      - name: Run Pytest
+        env:
+          AURA_ENV: testing
+          AURA_SECRET_KEY: test-secret-key-at-least-32-characters-long
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: aura_test
+          POSTGRES_USER: aura
+          POSTGRES_PASSWORD: aura-dev-password
+          REDIS_URL: redis://localhost:6379/0
+        run: pytest --cov=app --cov-report=xml
+        working-directory: backend
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./backend/coverage.xml
+          fail_ci_if_error: false
+  
+  frontend-ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+        working-directory: frontend
+      - name: Lint
+        run: npm run lint
+        working-directory: frontend
+      - name: Build
+        run: npm run build
+        working-directory: frontend

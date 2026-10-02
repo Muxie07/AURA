@@ -59,55 +59,38 @@ TEST_SETTINGS = Settings(
 
 
 @pytest.fixture(scope="session")
-def sqlite_engine():
-    """
-    Session-scoped async SQLite engine for unit tests.
-
-    SQLite is used to avoid requiring a real PostgreSQL instance for
-    unit tests. Integration tests requiring PostgreSQL-specific features
-    (JSONB, pgvector, etc.) should use the postgres_engine fixture instead.
-    """
-    from sqlalchemy.pool import StaticPool
-
+def postgres_engine():
     engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
+        TEST_SETTINGS.database_url,
+        pool_size=5,
+        max_overflow=10,
         echo=False,
     )
     return engine
 
-
 @pytest_asyncio.fixture
-async def create_tables(sqlite_engine):
-    """Create all tables in the in-memory SQLite database."""
-    async with sqlite_engine.begin() as conn:
+async def create_tables(postgres_engine):
+    async with postgres_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     yield
-    async with sqlite_engine.begin() as conn:
+    async with postgres_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 
-
 @pytest_asyncio.fixture
-async def db_session(sqlite_engine, create_tables) -> AsyncGenerator[AsyncSession, None]:
-    """
-    Provides a clean async database session for each test.
-    """
+async def db_session(postgres_engine, create_tables):
     factory = async_sessionmaker(
-        bind=sqlite_engine,
+        bind=postgres_engine,
         class_=AsyncSession,
         expire_on_commit=False,
         autoflush=False,
     )
     import app.database.base
-
     app.database.base._session_factory = factory
     async with factory() as session, session.begin():
         yield session
         await session.rollback()
     app.database.base._session_factory = None
-
 
 # =============================================================================
 # FastAPI Test Client

@@ -1,0 +1,39 @@
+name: Security Audit
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 2 * * *' # Daily at 2 AM
+
+jobs:
+  security-scans:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install security tools
+        run: pip install bandit pip-audit
+      - name: Run pip-audit
+        run: pip-audit
+        working-directory: backend
+      - name: Run Bandit
+        run: bandit -r app/ -ll
+        working-directory: backend
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+      - name: Run Trivy vulnerability scanner in fs mode
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+      - name: Frontend npm audit
+        run: npm audit
+        working-directory: frontend
