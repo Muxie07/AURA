@@ -36,19 +36,12 @@ class AgentWorkflowService:
 
     async def initialize(self, organization_id: uuid.UUID):
         import os
-
-        from app.tools.mcp.client import MCPClientManager, discover_mcp_tools
-
-        mcp_url = os.environ.get("MCP_SERVER_URL", "http://localhost:8000/api/v1/mcp/")
-        self.mcp_manager = MCPClientManager(mcp_url, organization_id)
-        await self.mcp_manager.connect()
-        if self.mcp_manager.session:
-            mcp_executors: list[Any] = await discover_mcp_tools(self.mcp_manager.session)
-        else:
-            mcp_executors = []
-        for executor in mcp_executors:
-            self.action_registry.register(executor)
-
+        mcp_url = os.environ.get("MCP_SERVER_URL", "http://localhost:8000/api/v1/mcp/messages")
+        
+        if self.mcp_manager:
+            mcp_executors = await self.mcp_manager.discover_tools(mcp_url, str(organization_id))
+            for executor in mcp_executors:
+                self.action_registry.register(executor)
     def _build_graph(self) -> WorkflowGraph:
         graph = WorkflowGraph()
 

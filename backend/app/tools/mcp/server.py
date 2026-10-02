@@ -53,6 +53,26 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             TextContent(type="text", text="Error: Unauthenticated. Missing organization context.")
         ]
 
+    # Rate limit check
+    import time
+
+    from app.security.rate_limit import get_redis_client
+    redis = await get_redis_client()
+    key = f"rate_limit:mcp_tool:{org_id}"
+    now = time.time()
+    window = 60
+    limit = 100
+
+    async with redis.pipeline(transaction=True) as pipe:
+        pipe.zremrangebyscore(key, 0, now - window)
+        pipe.zadd(key, {str(now): now})
+        pipe.zcard(key)
+        pipe.expire(key, window)
+        results = await pipe.execute()
+
+    if results[2] > limit:
+        return [TextContent(type="text", text="Error: RateLimitExceeded: Too many tool calls.")]
+
     try:
         tool_executor = mcp_registry.get(name)
     except Exception as e:

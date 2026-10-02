@@ -105,9 +105,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.error("stuck_run_recovery_failed", error=str(e))
 
     from app.tools.registry import ToolRegistry
+    from app.tools.mcp.client import MCPClientManager
 
     registry = ToolRegistry()
     app.state.tool_registry = registry
+    mcp_manager = MCPClientManager()
+    app.state.mcp_manager = mcp_manager
 
     yield
 
@@ -116,6 +119,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info(f"waiting {grace}s for in-flight requests")
     await asyncio.sleep(float(grace))
     await close_database()
+    await app.state.mcp_manager.close()
     logger.info("aura_shutdown_complete")
 
 
@@ -238,6 +242,15 @@ def create_app() -> FastAPI:
 
         if not ready:
             raise HTTPException(status_code=503, detail=status)
+        try:
+            # check MCP manager health
+            if not getattr(app.state, "mcp_manager", None):
+                status["mcp"] = "initializing"
+            else:
+                status["mcp"] = "ok" # Non-fatal
+        except Exception:
+            status["mcp"] = "unknown"
+            
         return status
 
     app.include_router(api_v1_router)

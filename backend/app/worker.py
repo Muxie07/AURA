@@ -9,6 +9,7 @@ from app.config.settings import get_settings
 from app.database.base import get_session_factory
 from app.database.models import AgentRun
 from app.knowledge.rag_service import RAGService
+from app.tools.mcp.client import MCPClientManager
 
 logger = structlog.get_logger(__name__)
 
@@ -18,9 +19,11 @@ async def startup(ctx):
     ctx["session_factory"] = get_session_factory()
     ctx["llm"] = LLMService()
     ctx["settings"] = settings
+    ctx["mcp_manager"] = MCPClientManager()
 
 async def shutdown(ctx):
     logger.info("Worker shutting down")
+    await ctx["mcp_manager"].close()
 
 async def run_agent(ctx, run_id_str: str):
     run_id = uuid.UUID(run_id_str)
@@ -38,7 +41,7 @@ async def run_agent(ctx, run_id_str: str):
         org_id = run.organization_id
 
         rag = RAGService(db, llm)
-        agent_service = AgentWorkflowService(db, llm, rag)
+        agent_service = AgentWorkflowService(db, llm, rag, mcp_manager=ctx["mcp_manager"])
 
         await agent_service.initialize(org_id)
         try:
