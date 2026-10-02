@@ -45,7 +45,19 @@ from app.database.base import Base
 # SQLAlchemy 2.0+ generic Uuid works on both PostgreSQL and SQLite (tests).
 # ---------------------------------------------------------------------------
 _UUID_TYPE = sa.Uuid(as_uuid=True)
-_JSON_TYPE = sa.JSON
+_JSON_TYPE = sa.JSON().with_variant(sa.dialects.postgresql.JSONB(), "postgresql")
+
+
+class TimestampMixin:
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        onupdate=sa.func.now(),
+        nullable=False,
+    )
 
 
 # =============================================================================
@@ -82,13 +94,16 @@ class AgentRunStatus(StrEnum):
 
 class UserRole(StrEnum):
     """RBAC Role for a user."""
+
     OWNER = "owner"
     ADMIN = "admin"
     MEMBER = "member"
     VIEWER = "viewer"
 
+
 class APIKey(Base):
     """Service-to-service API keys for an organization."""
+
     __tablename__ = "api_keys"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -266,11 +281,11 @@ class User(Base):
             UserRole,
             name="user_role_enum",
             native_enum=False,
-            values_callable=lambda x: [e.value for e in x]
+            values_callable=lambda x: [e.value for e in x],
         ),
         default=UserRole.MEMBER,
         nullable=False,
-        server_default="member"
+        server_default="member",
     )
 
     metadata_: Mapped[dict[str, Any]] = mapped_column(
@@ -280,7 +295,9 @@ class User(Base):
         nullable=False,
         doc="Flexible user metadata (preferences, avatar URL, etc.).",
     )
-    last_login_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
 
     # Relationships
     organization: Mapped[Organization] = relationship("Organization", back_populates="users")
@@ -296,7 +313,7 @@ class User(Base):
     __table_args__ = (UniqueConstraint("organization_id", "email", name="uq_users_org_email"),)
 
 
-class Conversation(Base):
+class Conversation(TimestampMixin, Base):
     """
     A conversation thread between a user and AURA.
 
@@ -361,7 +378,9 @@ class Conversation(Base):
         order_by="AgentRun.created_at",
     )
 
-    __table_args__ = ()
+    __table_args__ = (
+        sa.Index("ix_conv_org_created", "organization_id", "created_at", postgresql_using="btree"),
+    )
 
 
 class Message(Base):
@@ -374,6 +393,9 @@ class Message(Base):
     __tablename__ = "messages"
 
     id: Mapped[uuid.UUID] = mapped_column(_UUID_TYPE, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        _UUID_TYPE, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     conversation_id: Mapped[uuid.UUID] = mapped_column(
         _UUID_TYPE,
         ForeignKey("conversations.id", ondelete="CASCADE"),
@@ -420,7 +442,7 @@ class Message(Base):
     __table_args__ = ()
 
 
-class AgentRun(Base):
+class AgentRun(TimestampMixin, Base):
     """
     A single execution of the AURA agent in response to a user request.
 
@@ -431,6 +453,9 @@ class AgentRun(Base):
     __tablename__ = "agent_runs"
 
     id: Mapped[uuid.UUID] = mapped_column(_UUID_TYPE, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        _UUID_TYPE, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     conversation_id: Mapped[uuid.UUID] = mapped_column(
         _UUID_TYPE,
         ForeignKey("conversations.id", ondelete="CASCADE"),
@@ -528,31 +553,34 @@ class AgentRun(Base):
         back_populates="agent_run",
     )
 
-    __table_args__ = ()
+    __table_args__ = (
+        sa.Index(
+            "ix_agent_run_org_created", "organization_id", "created_at", postgresql_using="btree"
+        ),
+    )
 
 
-class ToolCall(Base):
+class ToolCall(TimestampMixin, Base):
     """
     Records a single tool invocation by the agent during a run.
-
-    Captures inputs, outputs, timing, and success/failure for each tool call.
     """
 
     __tablename__ = "tool_calls"
 
     id: Mapped[uuid.UUID] = mapped_column(_UUID_TYPE, primary_key=True, default=uuid.uuid4)
     agent_run_id: Mapped[uuid.UUID] = mapped_column(
+        _UUID_TYPE, ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    audit_id: Mapped[uuid.UUID | None] = mapped_column(
         _UUID_TYPE,
-        ForeignKey("agent_runs.id", ondelete="CASCADE"),
-        nullable=False,
+        ForeignKey("tool_execution_audits.id", ondelete="SET NULL"),
+        nullable=True,
         index=True,
     )
 
-    # Tool identification
     tool_name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     tool_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
-    # Execution
     status: Mapped[ToolCallStatus] = mapped_column(
         SAEnum(
             ToolCallStatus,
@@ -564,88 +592,45 @@ class ToolCall(Base):
         nullable=False,
         index=True,
     )
-    iteration: Mapped[int] = mapped_column(
-        Integer,
-        default=1,
-        nullable=False,
-        doc="Which agent iteration this tool was called in.",
-    )
+    iteration: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
-    # Input / Output (stored as _JSON_TYPE)
-    input_args: Mapped[dict[str, Any]] = mapped_column(
-        _JSON_TYPE,
-        default=dict,
-        nullable=False,
-        doc="Arguments passed to the tool.",
-    )
-    output: Mapped[dict[str, Any] | None] = mapped_column(
-        _JSON_TYPE,
-        nullable=True,
-        doc="Tool execution result.",
-    )
+    input_args: Mapped[dict[str, Any]] = mapped_column(_JSON_TYPE, default=dict, nullable=False)
+    output: Mapped[dict[str, Any] | None] = mapped_column(_JSON_TYPE, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Timing
     started_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    # Approval link (if this tool call required approval)
     approval_id: Mapped[uuid.UUID | None] = mapped_column(
-        _UUID_TYPE,
-        ForeignKey("approval_requests.id", ondelete="SET NULL"),
-        nullable=True,
+        _UUID_TYPE, ForeignKey("approval_requests.id", ondelete="SET NULL"), nullable=True
     )
 
-    # Relationships
     agent_run: Mapped[AgentRun] = relationship("AgentRun", back_populates="tool_calls")
     approval: Mapped[ApprovalRequest | None] = relationship(
-        "ApprovalRequest",
-        foreign_keys=[approval_id],
+        "ApprovalRequest", foreign_keys=[approval_id]
     )
+    audit: Mapped[ToolExecutionAudit | None] = relationship("ToolExecutionAudit")
 
-    __table_args__ = ()
+    __table_args__ = (sa.Index("ix_tool_calls_run_status", "agent_run_id", "status"),)
 
 
-class ApprovalRequest(Base):
-    """
-    Human-in-the-loop approval request.
-
-    Created when the agent attempts a high-impact action that requires
-    explicit user approval before execution.
-    """
-
+class ApprovalRequest(TimestampMixin, Base):
     __tablename__ = "approval_requests"
 
     id: Mapped[uuid.UUID] = mapped_column(_UUID_TYPE, primary_key=True, default=uuid.uuid4)
     agent_run_id: Mapped[uuid.UUID] = mapped_column(
-        _UUID_TYPE,
-        ForeignKey("agent_runs.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
+        _UUID_TYPE, ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=False, index=True
     )
     organization_id: Mapped[uuid.UUID] = mapped_column(
-        _UUID_TYPE,
-        ForeignKey("organizations.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
+        _UUID_TYPE, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
-    # What action is being requested
     tool_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    action_summary: Mapped[str] = mapped_column(
-        Text,
-        nullable=False,
-        doc="Human-readable description of the action requiring approval.",
-    )
-    action_details: Mapped[dict[str, Any]] = mapped_column(
-        _JSON_TYPE,
-        default=dict,
-        nullable=False,
-        doc="Structured details for the approval UI (diff, preview data, etc.).",
-    )
+    action_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    action_details: Mapped[dict[str, Any]] = mapped_column(_JSON_TYPE, default=dict, nullable=False)
+    args_hash: Mapped[str] = mapped_column(String(64), nullable=False)
 
-    # Status
     status: Mapped[ApprovalStatus] = mapped_column(
         SAEnum(
             ApprovalStatus,
@@ -658,27 +643,37 @@ class ApprovalRequest(Base):
         index=True,
     )
 
-    # Who actioned it (if actioned)
-    actioned_by_id: Mapped[uuid.UUID | None] = mapped_column(
-        _UUID_TYPE,
-        ForeignKey("users.id", ondelete="SET NULL"),
-        nullable=True,
+    requested_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        _UUID_TYPE, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
-    actioned_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    actioned_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        _UUID_TYPE, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    tool_call_id: Mapped[uuid.UUID | None] = mapped_column(
+        _UUID_TYPE, ForeignKey("tool_calls.id", ondelete="SET NULL"), nullable=True
+    )
+
+    actioned_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
     denial_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False)
 
-    # Expiry (unapproved requests expire)
-    expires_at: Mapped[datetime | None] = mapped_column(nullable=True)
-
-    # Relationships
     agent_run: Mapped[AgentRun] = relationship("AgentRun", back_populates="approvals")
+    requested_by: Mapped[User | None] = relationship("User", foreign_keys=[requested_by_id])
     actioned_by: Mapped[User | None] = relationship("User", foreign_keys=[actioned_by_id])
     organization: Mapped[Organization] = relationship("Organization")
 
-    __table_args__ = ()
+    __table_args__ = (
+        sa.Index("ix_approval_org_status", "organization_id", "status"),
+        sa.Index(
+            "ix_approval_pending",
+            "organization_id",
+            "status",
+            postgresql_where=sa.text("status = 'pending'"),
+        ),
+    )
 
 
-class AuditEvent(Base):
+class AuditEvent(TimestampMixin, Base):
     """
     Immutable audit log record.
 
@@ -743,7 +738,11 @@ class AuditEvent(Base):
     user: Mapped[User | None] = relationship("User", back_populates="audit_events")
     agent_run: Mapped[AgentRun | None] = relationship("AgentRun", back_populates="audit_events")
 
-    __table_args__ = ()
+    __table_args__ = (
+        sa.Index(
+            "ix_audit_ev_org_created", "organization_id", "created_at", postgresql_using="btree"
+        ),
+    )
 
 
 # =============================================================================
@@ -758,7 +757,7 @@ class DocumentStatus(StrEnum):
     FAILED = "failed"
 
 
-class KnowledgeBase(Base):
+class KnowledgeBase(TimestampMixin, Base):
     __tablename__ = "knowledge_bases"
 
     id: Mapped[uuid.UUID] = mapped_column(_UUID_TYPE, primary_key=True, default=uuid.uuid4)
@@ -767,12 +766,6 @@ class KnowledgeBase(Base):
     )
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True), server_default=sa.func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True), server_default=sa.func.now(), onupdate=sa.func.now()
-    )
 
     # Relationships
     organization: Mapped[Organization] = relationship(back_populates="knowledge_bases")
@@ -781,7 +774,13 @@ class KnowledgeBase(Base):
     )
 
 
-class Document(Base):
+class DocumentVisibility(StrEnum):
+    PUBLIC = "public"
+    PRIVATE = "private"
+    RESTRICTED = "restricted"
+
+
+class Document(TimestampMixin, Base):
     __tablename__ = "documents"
 
     id: Mapped[uuid.UUID] = mapped_column(_UUID_TYPE, primary_key=True, default=uuid.uuid4)
@@ -800,19 +799,31 @@ class Document(Base):
     indexed_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
 
     status: Mapped[DocumentStatus] = mapped_column(
-        SAEnum(DocumentStatus, native_enum=False, values_callable=lambda x: [e.value for e in x]),
+        SAEnum(
+            DocumentStatus,
+            name="document_status_enum",
+            native_enum=False,
+            values_callable=lambda x: [e.value for e in x],
+        ),
         default=DocumentStatus.UPLOADED,
         index=True,
     )
 
-    metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", _JSON_TYPE, default=dict)
+    # ACL
+    visibility: Mapped[DocumentVisibility] = mapped_column(
+        SAEnum(
+            DocumentVisibility,
+            name="doc_visibility_enum",
+            native_enum=False,
+            values_callable=lambda x: [e.value for e in x],
+        ),
+        default=DocumentVisibility.PUBLIC,
+        nullable=False,
+    )
+    allowed_roles: Mapped[list[str]] = mapped_column(_JSON_TYPE, default=list, nullable=False)
+    allowed_user_ids: Mapped[list[str]] = mapped_column(_JSON_TYPE, default=list, nullable=False)
 
-    created_at: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True), server_default=sa.func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True), server_default=sa.func.now(), onupdate=sa.func.now()
-    )
+    metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", _JSON_TYPE, default=dict)
 
     # Relationships
     knowledge_base: Mapped[KnowledgeBase] = relationship(back_populates="documents")
@@ -820,8 +831,14 @@ class Document(Base):
         back_populates="document", cascade="all, delete-orphan"
     )
 
+    __table_args__ = (
+        UniqueConstraint(
+            "knowledge_base_id", "checksum", "version", name="uq_doc_kb_checksum_version"
+        ),
+    )
 
-class DocumentChunk(Base):
+
+class DocumentChunk(TimestampMixin, Base):
     __tablename__ = "document_chunks"
 
     id: Mapped[uuid.UUID] = mapped_column(_UUID_TYPE, primary_key=True, default=uuid.uuid4)
@@ -834,23 +851,38 @@ class DocumentChunk(Base):
 
     chunk_index: Mapped[int] = mapped_column(Integer, index=True)
     content: Mapped[str] = mapped_column(Text)
+
+    # Text search vector
+    content_tsvector: Mapped[Any] = mapped_column(
+        sa.dialects.postgresql.TSVECTOR,
+        sa.Computed("to_tsvector('english', content)"),
+        nullable=True,
+    )
+
     token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", _JSON_TYPE, default=dict)
 
-    # 1536 matches OpenAI text-embedding-3-small
-    embedding: Mapped[Any] = mapped_column(Vector(1536), nullable=True)
+    # Note: Dimension should match embedding model (Google is 768)
+    embedding: Mapped[Any] = mapped_column(Vector(768), nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
     embedding_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
-
-    created_at: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True), server_default=sa.func.now()
-    )
 
     # Relationships
     document: Mapped[Document] = relationship(back_populates="chunks")
 
+    __table_args__ = (
+        sa.Index(
+            "ix_chunks_emb_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_with={"m": 16, "ef_construction": 64},
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+        sa.Index("ix_chunks_tsvector", "content_tsvector", postgresql_using="gin"),
+    )
 
-class ToolExecutionAudit(Base):
+
+class ToolExecutionAudit(TimestampMixin, Base):
     __tablename__ = "tool_execution_audits"
 
     id: Mapped[uuid.UUID] = mapped_column(_UUID_TYPE, primary_key=True, default=uuid.uuid4)
@@ -863,21 +895,42 @@ class ToolExecutionAudit(Base):
     execution_id: Mapped[str] = mapped_column(String(100), index=True)
     tool_name: Mapped[str] = mapped_column(String(255), index=True)
     tool_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
     source: Mapped[str] = mapped_column(String(50))
     risk_level: Mapped[str] = mapped_column(String(50))
     status: Mapped[str] = mapped_column(String(50), index=True)
+
     idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
-    input_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    args_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    approval_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("approval_requests.id", ondelete="SET NULL"), nullable=True
+    )
+
     started_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
+
     error_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(255), nullable=True)
     result_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    __table_args__ = (
+        sa.Index("ix_audit_run_started", "agent_run_id", "started_at"),
+        sa.Index("ix_audit_org_started", "organization_id", "started_at"),
+        sa.Index(
+            "ix_audit_idempotency",
+            "organization_id",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=sa.text("idempotency_key IS NOT NULL"),
+        ),
+    )
 
-class AgentTraceEvent(Base):
+
+class AgentTraceEvent(TimestampMixin, Base):
     __tablename__ = "agent_trace_events"
 
     id: Mapped[uuid.UUID] = mapped_column(_UUID_TYPE, primary_key=True, default=uuid.uuid4)
@@ -891,14 +944,12 @@ class AgentTraceEvent(Base):
     event_type: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     component: Mapped[str] = mapped_column(String(100), nullable=False)
     timestamp: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+        sa.DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    metadata_: Mapped[dict[str, Any] | None] = mapped_column(
-        "metadata",
-        _JSON_TYPE,
-        nullable=True,
-    )
+    metadata_: Mapped[dict[str, Any] | None] = mapped_column("metadata", _JSON_TYPE, nullable=True)
+
+    __table_args__ = (UniqueConstraint("run_id", "sequence", name="uq_trace_run_seq"),)
 
 
 class MemoryScope(StrEnum):
@@ -956,10 +1007,13 @@ class EvalDataset(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
 
     created_at: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True), server_default=sa.func.now()
+        sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True), server_default=sa.func.now(), onupdate=sa.func.now()
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        onupdate=sa.func.now(),
+        nullable=False,
     )
 
     examples: Mapped[list[EvalExample]] = relationship(
@@ -1012,9 +1066,8 @@ class EvalRun(Base):
     avg_cost_usd: Mapped[float] = mapped_column(sa.Float, default=0.0)
     sample_count: Mapped[int] = mapped_column(Integer, default=0)
 
-    completed_at: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True), server_default=sa.func.now()
-    )
+    started_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
 
     dataset: Mapped[EvalDataset] = relationship(back_populates="runs")
     results: Mapped[list[EvalResult]] = relationship(
@@ -1046,38 +1099,132 @@ class EvalResult(Base):
     run: Mapped[EvalRun] = relationship(back_populates="results")
 
 
-class Customer(Base):
+class Customer(TimestampMixin, Base):
     __tablename__ = "customers"
     id: Mapped[str] = mapped_column(String(50), primary_key=True)
     organization_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("organizations.id", ondelete="CASCADE"), index=True
     )
+    code: Mapped[str] = mapped_column(String(50))
     name: Mapped[str] = mapped_column(String(255))
     email: Mapped[str] = mapped_column(String(255))
 
+    __table_args__ = (UniqueConstraint("organization_id", "code", name="uq_customer_org_code"),)
 
-class Product(Base):
+
+class Product(TimestampMixin, Base):
     __tablename__ = "products"
     id: Mapped[str] = mapped_column(String(50), primary_key=True)
     organization_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("organizations.id", ondelete="CASCADE"), index=True
     )
-    name: Mapped[str] = mapped_column(String(255))
     sku: Mapped[str] = mapped_column(String(100))
+    name: Mapped[str] = mapped_column(String(255))
     availability: Mapped[str] = mapped_column(String(50))
-    base_price: Mapped[float] = mapped_column(sa.Float, default=0.0)
+    base_price: Mapped[float] = mapped_column(sa.Numeric(14, 2), default=0.0)
+    currency: Mapped[str] = mapped_column(String(3), default="USD")
+
+    __table_args__ = (UniqueConstraint("organization_id", "sku", name="uq_product_org_sku"),)
 
 
-class Quotation(Base):
+class Quotation(TimestampMixin, Base):
     __tablename__ = "quotations"
-    id: Mapped[str] = mapped_column(String(50), primary_key=True)
+    id: Mapped[uuid.UUID] = mapped_column(_UUID_TYPE, primary_key=True, default=uuid.uuid4)
     organization_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("organizations.id", ondelete="CASCADE"), index=True
     )
-    customer_id: Mapped[str] = mapped_column(
+    customer_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("customers.id", ondelete="CASCADE"), index=True
     )
-    items: Mapped[list[dict[str, Any]]] = mapped_column(_JSON_TYPE, default=list)
-    total: Mapped[str] = mapped_column(String(50))
+    code: Mapped[str] = mapped_column(String(50), index=True)
+
+    total: Mapped[float] = mapped_column(sa.Numeric(14, 2), default=0.0)
+    currency: Mapped[str] = mapped_column(String(3), default="USD")
     status: Mapped[str] = mapped_column(String(50))
+    version: Mapped[int] = mapped_column(Integer, default=1)
+
+    valid_until: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    approval_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("approval_requests.id", ondelete="SET NULL"), nullable=True
+    )
+
     idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    items: Mapped[list[QuotationItem]] = relationship(
+        "QuotationItem", back_populates="quotation", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "code", name="uq_quotation_org_code"),
+        sa.Index(
+            "ix_quotation_idempotency",
+            "organization_id",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=sa.text("idempotency_key IS NOT NULL"),
+        ),
+    )
+
+
+class QuotationItem(TimestampMixin, Base):
+    __tablename__ = "quotation_items"
+    id: Mapped[uuid.UUID] = mapped_column(_UUID_TYPE, primary_key=True, default=uuid.uuid4)
+    quotation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("quotations.id", ondelete="CASCADE"), index=True
+    )
+    product_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("products.id", ondelete="RESTRICT"), index=True
+    )
+
+    qty: Mapped[int] = mapped_column(Integer, default=1)
+    unit_price: Mapped[float] = mapped_column(sa.Numeric(14, 2), default=0.0)
+    discount: Mapped[float] = mapped_column(sa.Numeric(14, 2), default=0.0)
+    tax: Mapped[float] = mapped_column(sa.Numeric(14, 2), default=0.0)
+
+    quotation: Mapped[Quotation] = relationship("Quotation", back_populates="items")
+
+
+class LLMUsage(TimestampMixin, Base):
+    __tablename__ = "llm_usage"
+
+    id: Mapped[uuid.UUID] = mapped_column(_UUID_TYPE, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    agent_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+    provider: Mapped[str] = mapped_column(String(100), nullable=False)
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    cost_usd: Mapped[float] = mapped_column(sa.Numeric(14, 6), default=0.0, nullable=False)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class RefreshToken(TimestampMixin, Base):
+    __tablename__ = "refresh_tokens"
+    id: Mapped[uuid.UUID] = mapped_column(_UUID_TYPE, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    token: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False)
+    is_revoked: Mapped[bool] = mapped_column(sa.Boolean, default=False, nullable=False)
+
+
+class OutboxEvent(TimestampMixin, Base):
+    __tablename__ = "outbox_events"
+    id: Mapped[uuid.UUID] = mapped_column(_UUID_TYPE, primary_key=True, default=uuid.uuid4)
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(_JSON_TYPE, default=dict, nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="pending", nullable=False, index=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
