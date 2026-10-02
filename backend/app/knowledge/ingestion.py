@@ -54,10 +54,50 @@ class DocumentIngestionService:
             return
 
         try:
+            import hashlib
+            file_hash = hashlib.sha256(file_content).hexdigest()
+            document.metadata_["checksum"] = file_hash
+
+            # Dedupe: check if document with same checksum exists in this KB
+            dup_stmt = sa.select(Document).where(
+                Document.knowledge_base_id == document.knowledge_base_id,
+                Document.id != document.id,
+                Document.status == DocumentStatus.READY,
+            )
+            dup_res = await self.db.execute(dup_stmt)
+            for dup_doc in dup_res.scalars():
+                if dup_doc.metadata_.get("checksum") == file_hash:
+                    document.status = DocumentStatus.FAILED
+                    document.metadata_["error"] = "Duplicate checksum"
+                    await self.db.commit()
+                    logger.info("document_ingestion_skipped_duplicate", document_id=str(document_id))
+                    return
+
+            # Versioning: mark older docs with same filename as not latest
+            ver_stmt = sa.update(Document).where(
+                Document.knowledge_base_id == document.knowledge_base_id,
+                Document.filename == document.filename,
+                Document.id != document.id
+            ).values(is_latest=False)
+            await self.db.execute(ver_stmt)
+
             document.status = DocumentStatus.PROCESSING
             await self.db.commit()
 
-            # 1. Save file
+            # 1. Save file & magic byte validate
+            # Pure python magic byte check for PDF and Office files
+            header = file_content[:4]
+            if header.startswith(b'%PDF'):
+                mime_group = "pdf"
+            elif header.startswith(b'PK\x03\x04'):
+                mime_group = "office/docx"
+            elif header.startswith(b'\xd0\xcf\x11\xe0'):
+                mime_group = "office/legacy"
+            elif all(b < 128 for b in header):
+                mime_group = "text"
+            else:
+                raise ValueError(f"Invalid or unsupported file type, header: {header}")
+
             storage_path = await self.storage.save_file(file_content, filename)
             document.metadata_["storage_path"] = storage_path
 
@@ -120,4 +160,16 @@ class DocumentIngestionService:
             logger.error("document_ingestion_failed", document_id=str(document_id), error=str(e))
             document.status = DocumentStatus.FAILED
             document.metadata_["error"] = str(e)
+            await self.db.commit()
+
+    async def migrate_embeddings(self, new_model: str, batch_size: int = 100) -> None:
+        stmt = sa.select(DocumentChunk)
+        result = await self.db.execute(stmt)
+        chunks = result.scalars().all()
+        for i in range(0, len(chunks), batch_size):
+            batch = chunks[i:i + batch_size]
+            texts = [c.content for c in batch]
+            embeddings = await self.llm.provider.embed(texts, model=new_model)
+            for j, chunk in enumerate(batch):
+                chunk.embedding = embeddings[j]
             await self.db.commit()

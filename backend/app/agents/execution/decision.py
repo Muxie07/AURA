@@ -159,7 +159,9 @@ class DecisionNode(BaseNode):
                 )
 
             sys_prompt = (
-                "You are AURA. Answer the user's request. Use the provided context if available."
+                "You are AURA. Answer the user's request using ONLY the provided context.\n"
+                "CRITICAL: You must cite every claim using the provided [chunk_id].\n"
+                "If the context does not contain the answer, say 'I cannot find the answer in the provided documents.'\n"
             )
             usr_prompt = f"Original Request: {state.original_request}{rag_context}"
             req = GenerationRequest(
@@ -274,13 +276,32 @@ class DecisionNode(BaseNode):
 
                 redis_client = aioredis.from_url(get_settings().redis_url, socket_timeout=2.0)
 
+
                 final_text = ""
                 try:
-                    async for chunk in self.llm.stream(req):
-                        final_text += chunk
-                        await redis_client.publish(f"run_stream_{state.run_id}", chunk)
-                    state.final_response = final_text
-                    state.status = AgentNodeState.COMPLETED
+                    if state.retrieved_context:
+                        res = await self.llm.generate(req)
+                        final_text = res.text
+                        
+                        check_req = GenerationRequest(
+                            organization_id=state.organization_id,
+                            model=req.model,
+                            messages=[Message(role="user", content="Context: " + rag_context + "\n\nAnswer: " + final_text + "\n\nIs the answer fully supported by the context and are citations correct? Reply exactly YES or NO.")],
+                            temperature=0.0
+                        )
+                        check_res = await self.llm.generate(check_req)
+                        if "NO" in check_res.text.upper():
+                            final_text = "I cannot find a fully supported answer in the provided documents."
+                            
+                        await redis_client.publish(f"run_stream_{state.run_id}", final_text)
+                        state.final_response = final_text
+                        state.status = AgentNodeState.COMPLETED
+                    else:
+                        async for chunk in self.llm.stream(req):
+                            final_text += chunk
+                            await redis_client.publish(f"run_stream_{state.run_id}", chunk)
+                        state.final_response = final_text
+                        state.status = AgentNodeState.COMPLETED
                 except Exception as e:
                     from app.ai.errors.exceptions import LLMQuotaExceededError
 

@@ -293,6 +293,42 @@ class QualityEvaluator:
 class GoldenDatasetEvaluator:
     """
     Evaluates agent output against golden dataset examples.
+    """
+    @staticmethod
+    def evaluate_retrieval(expected_chunk_ids: list[str], actual_chunk_ids: list[str]) -> dict[str, float]:
+        import math
+        k = len(actual_chunk_ids)
+        if not expected_chunk_ids or not actual_chunk_ids:
+            return {"recall_at_k": 0.0, "mrr": 0.0, "ndcg": 0.0}
+
+        expected_set = set(expected_chunk_ids)
+
+        # Recall@k
+        hits = sum(1 for cid in actual_chunk_ids if cid in expected_set)
+        recall = hits / len(expected_set)
+
+        # MRR
+        mrr = 0.0
+        for i, cid in enumerate(actual_chunk_ids):
+            if cid in expected_set:
+                mrr = 1.0 / (i + 1)
+                break
+
+        # nDCG
+        dcg = 0.0
+        for i, cid in enumerate(actual_chunk_ids):
+            if cid in expected_set:
+                dcg += 1.0 / math.log2(i + 2)
+
+        idcg = 0.0
+        for i in range(min(len(expected_set), k)):
+            idcg += 1.0 / math.log2(i + 2)
+
+        ndcg = dcg / idcg if idcg > 0 else 0.0
+
+        return {"recall_at_k": recall, "mrr": mrr, "ndcg": ndcg}
+
+    """
     Deterministic — no LLM calls.
     """
 

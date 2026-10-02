@@ -63,6 +63,7 @@ class Retriever:
             WHERE c.organization_id = :org_id
               AND d.organization_id = :org_id
               AND d.knowledge_base_id = :kb_id
+              AND d.is_latest = true
             ORDER BY c.embedding <=> :query_vector
             LIMIT :limit
         """)
@@ -77,6 +78,7 @@ class Retriever:
             WHERE c.organization_id = :org_id
               AND d.organization_id = :org_id
               AND d.knowledge_base_id = :kb_id
+              AND d.is_latest = true
               AND to_tsvector('english', c.content) @@ websearch_to_tsquery('english', :kw)
             ORDER BY score DESC
             LIMIT :limit
