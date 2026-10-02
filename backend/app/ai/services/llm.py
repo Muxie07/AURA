@@ -4,7 +4,7 @@ from typing import Any, TypeVar
 
 import structlog
 from pydantic import BaseModel
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
 
 from app.ai.errors.exceptions import LLMRateLimitError, LLMTimeoutError
 from app.ai.providers.factory import get_llm_provider
@@ -23,7 +23,8 @@ class LLMService:
     Handles routing, provider execution, retries, fallbacks, and observability.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, db=None) -> None:
+        self.db = db
         self.settings = get_settings()
         self.provider = get_llm_provider()
 
@@ -42,11 +43,11 @@ class LLMService:
         return retry(
             retry=retry_if_exception_type((LLMTimeoutError, LLMRateLimitError)),
             stop=stop_after_attempt(self.settings.llm_retry_max),
-            wait=wait_exponential(multiplier=self.settings.llm_retry_delay),
+            wait=wait_exponential_jitter(initial=self.settings.llm_retry_delay, max=60),
             reraise=True,
         )
 
-    def _check_budget_before_run(self, request: GenerationRequest, model: str) -> None:
+    async def _check_budget_before_run(self, request: GenerationRequest, model: str) -> None:
         if not request.organization_id:
             return
 
@@ -56,16 +57,15 @@ class LLMService:
         prompt_chars = sum(len(m.content) for m in request.messages if m.content)
         est_tokens = int(prompt_chars / 3.0)
 
-        # Estimate with a reasonable output length
         est_cost = CostManager.estimate_cost(model, self.provider.name, est_tokens, 500)
-        check = CostManager.check_budget(
+        check = await CostManager.check_budget_async(
             organization_id=request.organization_id, estimated_cost_usd=est_cost.estimated_cost_usd
         )
 
         if check.status == BudgetStatus.EXCEEDED:
             raise Exception(f"Budget exceeded: {check.message}")
 
-    def _update_usage_cost(self, request: GenerationRequest, result: GenerationResult) -> None:
+    async def _update_usage_cost(self, request: GenerationRequest, result: GenerationResult) -> None:
         from app.evaluation.cost import CostManager
 
         est = CostManager.estimate_cost(
@@ -76,22 +76,33 @@ class LLMService:
         )
         result.usage.estimated_cost = est.estimated_cost_usd
 
-        if request.organization_id:
-            # We already reserved some budget before the run. To be strictly correct,
-            # one would compute the delta, but CostManager doesn't expose a delta method easily
-            # without reading _org_daily_spend. For now we just ensure the result has the estimated_cost.
-            pass
+        if request.organization_id and self.db:
+            await CostManager.record_usage_async(
+                db=self.db,
+                organization_id=request.organization_id,
+                agent_run_id=None,
+                model=result.model,
+                provider=result.provider,
+                input_tokens=result.usage.prompt_tokens,
+                output_tokens=result.usage.completion_tokens,
+                total_cost=est.estimated_cost_usd
+            )
 
     async def generate_with_fallback(
         self, request: GenerationRequest, fallback_model: str | None = None
     ) -> GenerationResult:
         retry_decorator = self._get_retry_decorator()
 
-        self._check_budget_before_run(request, request.model)
+        if self.settings.eval_mode:
+            request.temperature = 0.0
+            if "seed" not in request.metadata:
+                request.metadata["seed"] = 42
+
+        await self._check_budget_before_run(request, request.model)
 
         try:
             result = await retry_decorator(self.provider.generate)(request)
-            self._update_usage_cost(request, result)
+            await self._update_usage_cost(request, result)
             return result  # type: ignore
         except (LLMTimeoutError, LLMRateLimitError, Exception) as e:
             logger.warning(
@@ -101,10 +112,10 @@ class LLMService:
             # Try fallback model on primary provider if given
             if fallback_model and fallback_model != request.model:
                 try:
-                    self._check_budget_before_run(request, fallback_model)
+                    await self._check_budget_before_run(request, fallback_model)
                     fallback_request = request.model_copy(update={"model": fallback_model})
                     result = await retry_decorator(self.provider.generate)(fallback_request)
-                    self._update_usage_cost(fallback_request, result)
+                    await self._update_usage_cost(fallback_request, result)
                     return result  # type: ignore
                 except Exception as fb_e:
                     logger.warning("llm_generation_fallback_model_failed", error=str(fb_e))
@@ -118,14 +129,14 @@ class LLMService:
                     model=self.settings.fallback_llm_model,
                 )
                 try:
-                    self._check_budget_before_run(request, self.settings.fallback_llm_model)
+                    await self._check_budget_before_run(request, self.settings.fallback_llm_model)
                     fallback_request = request.model_copy(
                         update={"model": self.settings.fallback_llm_model}
                     )
                     result = await retry_decorator(self.fallback_provider.generate)(
                         fallback_request
                     )
-                    self._update_usage_cost(fallback_request, result)
+                    await self._update_usage_cost(fallback_request, result)
                     return result
                 except Exception as fb_p_e:
                     logger.error("llm_generation_fallback_provider_failed", error=str(fb_p_e))
@@ -138,13 +149,18 @@ class LLMService:
     ) -> tuple[GenerationResult, T]:
         retry_decorator = self._get_retry_decorator()
 
-        self._check_budget_before_run(request, request.model)
+        if self.settings.eval_mode:
+            request.temperature = 0.0
+            if "seed" not in request.metadata:
+                request.metadata["seed"] = 42
+
+        await self._check_budget_before_run(request, request.model)
 
         try:
             result, parsed = await retry_decorator(self.provider.generate_structured)(
                 request, schema
             )
-            self._update_usage_cost(request, result)
+            await self._update_usage_cost(request, result)
             return result, parsed
         except (LLMTimeoutError, LLMRateLimitError, Exception) as e:
             logger.warning(
@@ -153,12 +169,12 @@ class LLMService:
 
             if fallback_model and fallback_model != request.model:
                 try:
-                    self._check_budget_before_run(request, fallback_model)
+                    await self._check_budget_before_run(request, fallback_model)
                     fallback_request = request.model_copy(update={"model": fallback_model})
                     result, parsed = await retry_decorator(self.provider.generate_structured)(
                         fallback_request, schema
                     )
-                    self._update_usage_cost(fallback_request, result)
+                    await self._update_usage_cost(fallback_request, result)
                     return result, parsed
                 except Exception as fb_e:
                     logger.warning("llm_structured_fallback_model_failed", error=str(fb_e))
@@ -171,14 +187,14 @@ class LLMService:
                     model=self.settings.fallback_llm_model,
                 )
                 try:
-                    self._check_budget_before_run(request, self.settings.fallback_llm_model)
+                    await self._check_budget_before_run(request, self.settings.fallback_llm_model)
                     fallback_request = request.model_copy(
                         update={"model": self.settings.fallback_llm_model}
                     )
                     result, parsed = await retry_decorator(
                         self.fallback_provider.generate_structured
                     )(fallback_request, schema)
-                    self._update_usage_cost(fallback_request, result)
+                    await self._update_usage_cost(fallback_request, result)
                     return result, parsed
                 except Exception as fb_p_e:
                     logger.error("llm_structured_fallback_provider_failed", error=str(fb_p_e))
@@ -241,7 +257,7 @@ class LLMService:
     @retry(
         retry=retry_if_exception_type((LLMTimeoutError, LLMRateLimitError)),
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1),
+        wait=wait_exponential_jitter(initial=1, max=60),
         reraise=True,
     )
     async def stream(self, request: GenerationRequest) -> AsyncGenerator[str, None]:

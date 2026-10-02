@@ -209,12 +209,13 @@ class Settings(BaseSettings):
     )
 
     # Phase 6: Intelligent Model Routing
-    fast_model: str = Field(default="gpt-4o-mini")
-    reasoning_model: str = Field(default="gpt-4o")
-    long_context_model: str = Field(default="gpt-4-turbo")
+    fast_model: str = Field(default="gemini-1.5-flash")
+    reasoning_model: str = Field(default="gemini-1.5-pro")
+    long_context_model: str = Field(default="gemini-1.5-pro")
 
     # Phase 6: Limits
     max_replan_attempts: int = Field(default=2, ge=0)
+    eval_mode: bool = Field(default=False, description="Deterministic mode for evals")
     max_tool_calls: int = Field(default=10, ge=1)
     max_model_fallbacks: int = Field(default=1, ge=0)
 
