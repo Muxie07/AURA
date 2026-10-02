@@ -137,15 +137,33 @@ class MaxSizeMiddleware(BaseHTTPMiddleware):
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        from app.config.settings import get_settings
+        settings = get_settings()
         response = await call_next(request)
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        if settings.is_production:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         return response
 
 
+
+async def global_exception_handler(request: Request, exc: Exception):
+    import traceback
+    from fastapi.responses import JSONResponse
+    from app.observability.logging import get_logger
+    
+    logger = get_logger("app.main")
+    logger.error("Unhandled global exception", error=str(exc), exc_info=exc)
+    
+    return JSONResponse(
+        status_code=500,
+        content={"error": {"code": "internal_error", "message": "Internal Server Error"}},
+    )
+
 def create_app() -> FastAPI:
+
     """
     Application factory.
 
@@ -188,27 +206,19 @@ def create_app() -> FastAPI:
     app.add_middleware(RequestMetricsMiddleware)
     app.add_middleware(RequestIDMiddleware)
 
-    if settings.is_production:
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=["https://your-production-domain.com"],
-            allow_credentials=True,
-            allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
-            expose_headers=["X-Request-ID", "X-Correlation-ID"],
-        )
-    else:
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=["*"],
-            allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
-            expose_headers=["X-Request-ID", "X-Correlation-ID"],
-        )
+    # Use explicit allowlist from settings for both dev and prod
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.aura_cors_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"],
+        allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Correlation-ID", "Accept"],
+        expose_headers=["X-Request-ID", "X-Correlation-ID"],
+    )
 
     # ---- Exception Handlers ---------------------------------------------
     register_exception_handlers(app)
+    app.add_exception_handler(Exception, global_exception_handler)
 
     # ---- Routers --------------------------------------------------------
     from app.api.v1.router import api_v1_router

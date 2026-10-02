@@ -6,6 +6,29 @@ import httpx
 
 
 async def main():
+    base_url = "http://localhost:8000"
+
+    # Preflight Check
+    try:
+        r = httpx.options(
+            f"{base_url}/api/v1/conversations",
+            headers={
+                "Origin": "http://localhost:3000",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "authorization,content-type"
+            },
+            timeout=5.0
+        )
+        if r.status_code not in (200, 204):
+            print(f"❌ CORS preflight failed: {r.status_code}")
+            sys.exit(1)
+        if "access-control-allow-origin" not in r.headers:
+            print("❌ CORS preflight missing allow-origin header")
+            sys.exit(1)
+        print("✅ CORS preflight passed")
+    except Exception as e:
+        print(f"❌ CORS preflight error: {e}")
+        sys.exit(1)
     parser = argparse.ArgumentParser()
     parser.add_argument("--env", default="development")
     args = parser.parse_args()

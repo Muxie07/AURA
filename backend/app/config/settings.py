@@ -249,7 +249,7 @@ class Settings(BaseSettings):
     aura_sentry_dsn: AnyHttpUrl | None = Field(default=None)
     aura_daily_org_budget_usd: float = Field(default=10.0)
     aura_max_request_bytes: int = Field(default=10485760)  # 10MB
-    aura_trusted_hosts: list[str] = Field(default=["*"])
+    aura_trusted_hosts: list[str] = Field(default=["localhost", "127.0.0.1", "backend", "api", "testserver"])
     aura_jwt_iss: str = Field(default="aura")
     aura_jwt_aud: str = Field(default="aura")
     aura_demo_password: str = Field(default="demo1234")
@@ -350,9 +350,9 @@ class Settings(BaseSettings):
             if self.aura_debug:
                 raise ValueError("AURA_DEBUG must be false in production.")
             if "*" in self.aura_trusted_hosts or "localhost" in self.aura_trusted_hosts:
-                raise ValueError("AURA_TRUSTED_HOSTS must not contain wildcards or localhost in prod.")
+                raise ValueError("AURA_TRUSTED_HOSTS: must not contain wildcards or localhost in prod.")
             if not str(self.aura_api_base_url).startswith("https"):
-                raise ValueError("aura_api_base_url must use https in production.")
+                raise ValueError("AURA_API_BASE_URL: must use https in production.")
             if self.aura_log_format != LogFormat.JSON:
                 raise ValueError("aura_log_format must be JSON in production.")
 

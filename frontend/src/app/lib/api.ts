@@ -1,3 +1,10 @@
+
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+
+if (typeof window === 'undefined' && !process.env.NEXT_PUBLIC_API_URL) {
+  console.warn("WARNING: NEXT_PUBLIC_API_URL is not set. Defaulting to http://localhost:8000/api/v1");
+}
+
 export class APIError extends Error {
   status: number;
   details: any;
@@ -14,7 +21,7 @@ export async function fetchApi(endpoint: string, options: RequestInit = {}): Pro
 
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+  
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -32,9 +39,14 @@ export async function fetchApi(endpoint: string, options: RequestInit = {}): Pro
       ...options,
       headers,
     });
-  } catch (err: any) {
-    console.error(`[Network/Fetch Error] ${options.method || 'GET'} ${API_URL}${endpoint} - ${err.message}`);
-    throw new APIError(0, err.message || 'Failed to fetch', err);
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    console.error(`[Network/Fetch Error] ${options.method || 'GET'} ${API_URL}${endpoint} - ${errorMsg}`);
+    let details = 'Backend unreachable (Connection Refused or CORS)';
+    if (errorMsg.includes('Failed to fetch')) {
+        details = 'Backend unreachable or CORS preflight failed. Check API URL and server health.';
+    }
+    throw new APIError(0, errorMsg || 'Failed to fetch', { details });
   }
 
 
