@@ -17,8 +17,8 @@ async def customer_search_handler(
         if query:
             stmt = stmt.where(
                 sa.or_(
-                    sa.func.lower(Customer.name).like(f"%{query}%"),
-                    sa.func.lower(Customer.email).like(f"%{query}%"),
+                    sa.func.lower(Customer.name).like(f"%{query.replace('%', r'\%').replace('_', r'\_')}%", escape="\\"),
+                    sa.func.lower(Customer.email).like(f"%{query.replace('%', r'\%').replace('_', r'\_')}%", escape="\\"),
                 )
             )
         result = await db.execute(stmt)

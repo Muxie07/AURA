@@ -15,8 +15,8 @@ async def product_search_handler(arguments: dict[str, Any], context: ToolContext
         if query:
             stmt = stmt.where(
                 sa.or_(
-                    sa.func.lower(Product.name).like(f"%{query}%"),
-                    sa.func.lower(Product.sku).like(f"%{query}%"),
+                    sa.func.lower(Product.name).like(f"%{query.replace('%', r'\%').replace('_', r'\_')}%", escape="\\"),
+                    sa.func.lower(Product.sku).like(f"%{query.replace('%', r'\%').replace('_', r'\_')}%", escape="\\"),
                 )
             )
         result = await db.execute(stmt)

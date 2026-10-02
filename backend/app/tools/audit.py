@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.models import ToolExecutionAudit
@@ -31,25 +31,43 @@ async def persist_tool_audit(
     definition: ToolDefinition,
     arguments: dict[str, Any],
     started_at: datetime,
-    completed_at: datetime,
+    completed_at: datetime | None,
     duration_ms: int,
     result: ToolResult,
     input_hash: str,
-) -> None:
+    status: str = "succeeded",
+    existing_audit_id: uuid.UUID | None = None,
+) -> uuid.UUID:
     """Persist the tool execution to the database."""
 
+    if existing_audit_id:
+        stmt = (
+            update(ToolExecutionAudit)
+            .where(ToolExecutionAudit.id == existing_audit_id)
+            .values(
+                status=status,
+                completed_at=completed_at,
+                duration_ms=duration_ms,
+                error_type=result.error_type,
+                result_summary=str(result.message) if result.message else ("Success" if status == "succeeded" else "Failed")
+            )
+        )
+        await db.execute(stmt)
+        return existing_audit_id
+
+    new_id = uuid.uuid4()
     audit = ToolExecutionAudit(
-        id=uuid.uuid4(),
+        id=new_id,
         organization_id=context.organization_id,
         agent_run_id=context.agent_run_id,
         execution_id=context.execution_id,
         tool_name=definition.name,
-        tool_version="1.0",  # Or from definition
+        tool_version="1.0",
         source=definition.source.value,
         risk_level=definition.risk_level.value,
-        status=result.status,
+        status=status,
         idempotency_key=context.idempotency_key,
-        input_hash=input_hash,
+        args_hash=input_hash,
         started_at=started_at,
         completed_at=completed_at,
         duration_ms=duration_ms,
@@ -58,7 +76,7 @@ async def persist_tool_audit(
         error_code=None,
         result_summary=str(result.message)
         if result.message
-        else ("Success" if result.status == "succeeded" else "Failed"),
+        else ("Success" if status == "succeeded" else "Failed"),
     )
     db.add(audit)
-    await db.commit()
+    return new_id

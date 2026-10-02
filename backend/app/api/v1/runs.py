@@ -10,7 +10,6 @@ from fastapi import Request, APIRouter, BackgroundTasks, Depends, Header, HTTPEx
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.agents.services.agent_service import AgentWorkflowService
 from app.ai.services.llm import LLMService
 from app.api.deps import CurrentUserDep, DatabaseDep
 from app.database.models import (
@@ -59,80 +58,17 @@ class AgentEventResponse(BaseModel):
 
 
 async def run_agent_in_background(run_id: uuid.UUID):
-    import traceback
-
-    from app.ai.services.llm import LLMService
-    from app.database.base import get_session_factory
-    from app.knowledge.rag_service import RAGService
-
-    SessionFactory = get_session_factory()
-    async with SessionFactory() as db:
-        llm = LLMService()
-        rag = RAGService(db, llm)
-        agent_service = AgentWorkflowService(db, llm, rag)
-        try:
-            import asyncio
-
-            # Create a task so we can cancel it properly if the outer wait_for times out
-            agent_task = asyncio.create_task(agent_service.execute_run(run_id))
-            try:
-                await asyncio.wait_for(agent_task, timeout=300.0)
-            except TimeoutError:
-                agent_task.cancel()
-                # Wait for the task to actually finish canceling
-                import contextlib
-
-                with contextlib.suppress(asyncio.CancelledError):
-                    await agent_task
-                raise TimeoutError() from None
-
-        except TimeoutError:
-            import structlog
-
-            logger = structlog.get_logger(__name__)
-            logger.error("agent_run_timeout", run_id=str(run_id))
-            try:
-                await db.rollback()
-                run = await db.scalar(sa.select(AgentRun).where(AgentRun.id == run_id))
-                if run:
-                    run.status = AgentRunStatus.FAILED
-                    run.error_message = "Agent execution timed out."
-
-                    assistant_msg = Message(
-                        conversation_id=run.conversation_id,
-                        role=MessageRole.ASSISTANT,
-                        content="AURA encountered a timeout during execution.",
-                        agent_run_id=run.id,
-                    )
-                    db.add(assistant_msg)
-                    await db.commit()
-            except Exception:
-                pass
-        except BaseException as e:
-            traceback.print_exc()
-            try:
-                await db.rollback()
-                run = await db.scalar(sa.select(AgentRun).where(AgentRun.id == run_id))
-                if run:
-                    run.status = AgentRunStatus.FAILED
-                    run.error_message = f"Agent execution failed: {str(e) or 'Unknown error'}"
-
-                    assistant_msg = Message(
-                        conversation_id=run.conversation_id,
-                        role=MessageRole.ASSISTANT,
-                        content=f"AURA encountered an execution error: {str(e) or 'Unknown error'}",
-                        agent_run_id=run.id,
-                    )
-                    db.add(assistant_msg)
-                    await db.commit()
-            except Exception as inner_e:
-                import structlog
-
-                logger = structlog.get_logger(__name__)
-                logger.error("fatal_error_in_exception_handler", error=str(inner_e))
-        finally:
-            await agent_service.aclose()
-
+    import arq
+    import structlog
+    from app.config.settings import get_settings
+    logger = structlog.get_logger(__name__)
+    settings = get_settings()
+    try:
+        redis_pool = await arq.create_pool(arq.connections.RedisSettings.from_dsn(settings.redis_url))
+        await redis_pool.enqueue_job("run_agent", str(run_id))
+        await redis_pool.close()
+    except Exception as e:
+        logger.error("Failed to enqueue run_agent", error=str(e))
 
 def get_llm() -> LLMService:
     return LLMService()
