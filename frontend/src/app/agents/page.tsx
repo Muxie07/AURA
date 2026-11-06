@@ -1,145 +1,249 @@
 'use client';
-import { fetchApi } from '../lib/api';
 import { useEffect, useState } from 'react';
-import { Card, PageHeader, LoadingState, StatusBadge, EmptyState, Button } from '../components/ui';
-import { Bot, Plus, Search, CheckCircle2, Play, Activity, SearchIcon, Calculator, FileText, Wrench } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
 import Link from 'next/link';
+import { 
+  Bot, 
+  Plus, 
+  Play, 
+  Sliders, 
+  Shield, 
+  Wrench, 
+  BookOpen, 
+  CheckCircle2, 
+  PauseCircle, 
+  MoreVertical,
+  ExternalLink,
+  Search,
+  Filter
+} from 'lucide-react';
+import { fetchApi } from '../lib/api';
 
-export default function TasksPage() {
-  const [runs, setRuns] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+export interface EnterpriseAgent {
+  id: string;
+  name: string;
+  description: string;
+  purpose: string;
+  status: 'ACTIVE' | 'PAUSED' | 'DEPLOYING' | 'DRAFT';
+  model_provider: string;
+  model_name: string;
+  assigned_tools_count: number;
+  knowledge_bases_count: number;
+  last_execution: string;
+  owner: string;
+  risk_tier: 'LOW' | 'MEDIUM' | 'HIGH';
+}
 
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        const res = await fetchApi('/runs');
-        if (res.ok) {
-          const json = await res.json();
-          setRuns(json.runs || []);
-        } else {
-          setError('Failed to fetch tasks.');
-        }
-      } catch (err) {
-        console.error(err);
-        setError('An error occurred while fetching tasks.');
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchData();
-  }, []);
+const DEFAULT_ENTERPRISE_AGENTS: EnterpriseAgent[] = [
+  {
+    id: 'agent-sales-ops',
+    name: 'Sales Quotation & Pricing Specialist',
+    description: 'Calculates corporate discounts, parses Cloud Infotech hardware price books, and drafts verified quotations.',
+    purpose: 'B2B Quotation generation & hardware price auditing',
+    status: 'ACTIVE',
+    model_provider: 'Google Vertex / Gemini',
+    model_name: 'gemini-2.5-flash',
+    assigned_tools_count: 4,
+    knowledge_bases_count: 2,
+    last_execution: '10 minutes ago',
+    owner: 'Operations Team',
+    risk_tier: 'MEDIUM',
+  },
+  {
+    id: 'agent-invoice-gen',
+    name: 'Tax Invoicing & Financial Settlement Agent',
+    description: 'Generates official GST compliant invoices with itemized HSN/SAC codes and 18% tax calculations.',
+    purpose: 'Automated invoice issuance with human-in-the-loop validation',
+    status: 'ACTIVE',
+    model_provider: 'Google Vertex / Gemini',
+    model_name: 'gemini-2.5-flash',
+    assigned_tools_count: 3,
+    knowledge_bases_count: 1,
+    last_execution: '2 hours ago',
+    owner: 'Finance & Compliance',
+    risk_tier: 'HIGH',
+  },
+  {
+    id: 'agent-knowledge-rag',
+    name: 'Enterprise Knowledge & Policy Researcher',
+    description: 'Executes hybrid dense vector and BM25 sparse retrieval over internal corporate documentation.',
+    purpose: 'Internal policy, catalog, and documentation lookup',
+    status: 'ACTIVE',
+    model_provider: 'Gemini / Heuristic Engine',
+    model_name: 'adaptive-hybrid-v1',
+    assigned_tools_count: 2,
+    knowledge_bases_count: 5,
+    last_execution: '45 minutes ago',
+    owner: 'Knowledge Management',
+    risk_tier: 'LOW',
+  },
+  {
+    id: 'agent-mcp-orchestrator',
+    name: 'Distributed MCP Tool Bridge',
+    description: 'Executes external standardized MCP tools over SSE and JSON-RPC protocols with sandbox verification.',
+    purpose: 'Connecting third-party inventory and CRM endpoints safely',
+    status: 'ACTIVE',
+    model_provider: 'FastAPI MCP Client',
+    model_name: 'mcp-jsonrpc-2.0',
+    assigned_tools_count: 8,
+    knowledge_bases_count: 0,
+    last_execution: '3 hours ago',
+    owner: 'Platform Engineering',
+    risk_tier: 'MEDIUM',
+  },
+  {
+    id: 'agent-eval-auditor',
+    name: 'Response Faithfulness & Eval Gate',
+    description: 'Calculates Ragas groundedness, citation coverage, and latency metrics across agent execution traces.',
+    purpose: 'Continuous evaluation and safety auditing',
+    status: 'ACTIVE',
+    model_provider: 'Local Evaluation Framework',
+    model_name: 'eval-suite-v1',
+    assigned_tools_count: 1,
+    knowledge_bases_count: 1,
+    last_execution: '1 day ago',
+    owner: 'AI Governance',
+    risk_tier: 'LOW',
+  }
+];
 
-  const capabilities = [
-    { icon: SearchIcon, title: 'Search Company Knowledge', desc: 'Find policies, runbooks, and docs.' },
-    { icon: Activity, title: 'Investigate Issues', desc: 'Analyze logs, metrics, and systems.' },
-    { icon: Calculator, title: 'Calculate & Analyze', desc: 'Process pricing, costs, and data.' },
-    { icon: FileText, title: 'Prepare Drafts', desc: 'Create reports, emails, and quotes.' }
-  ];
+export default function AgentsDirectoryPage() {
+  const [agents, setAgents] = useState<EnterpriseAgent[]>(DEFAULT_ENTERPRISE_AGENTS);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+
+  const filteredAgents = agents.filter(a => {
+    const matchesSearch = a.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          a.description.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesStatus = statusFilter === 'ALL' || a.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
 
   return (
-    <div className="space-y-6 h-full flex flex-col">
-      <PageHeader 
-        title="AI Tasks" 
-        description="See what the AI has worked on and what it decided."
-        actions={
-          <Link href="/conversations" className="inline-flex items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500">
-            <Plus className="w-4 h-4 mr-2" /> Start New Task
-          </Link>
-        }
-      />
+    <div className="space-y-6 max-w-7xl mx-auto">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Enterprise Agents Directory</h1>
+          <p className="text-xs text-slate-500 mt-1">
+            Governed AI agents configured with explicit tool sets, role permissions, and knowledge boundaries.
+          </p>
+        </div>
+        <Link
+          href="/studio/agent"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 transition shadow-xs"
+        >
+          <Plus className="h-4 w-4" />
+          Create New Agent
+        </Link>
+      </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {capabilities.map((cap, i) => (
-          <div key={i} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-start gap-3">
-            <div className="p-2 bg-blue-50 text-blue-600 rounded-lg shrink-0">
-              <cap.icon className="w-5 h-5" />
-            </div>
+      {/* Filter and Search Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search agents by name, purpose, or model..."
+            className="w-full rounded-lg border border-slate-200 bg-slate-50/60 pl-9 pr-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 transition"
+          />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Filter className="h-4 w-4 text-slate-400" />
+          <span className="text-xs text-slate-500 font-medium">Status:</span>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          >
+            <option value="ALL">All Statuses</option>
+            <option value="ACTIVE">Active</option>
+            <option value="PAUSED">Paused</option>
+            <option value="DRAFT">Draft</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Agents Cards Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        {filteredAgents.map((agent) => (
+          <div
+            key={agent.id}
+            className="flex flex-col justify-between bg-white rounded-xl border border-slate-200/80 p-5 shadow-xs hover:border-slate-300 hover:shadow-sm transition-all"
+          >
             <div>
-              <h4 className="font-semibold text-gray-900 text-sm">{cap.title}</h4>
-              <p className="text-xs text-gray-500 mt-0.5">{cap.desc}</p>
+              {/* Card Header */}
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-9 w-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                    <Bot className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-bold text-slate-900 leading-tight">{agent.name}</h2>
+                    <span className="text-[10px] text-slate-400 font-medium">{agent.owner}</span>
+                  </div>
+                </div>
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                  agent.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60' : 'bg-slate-100 text-slate-600'
+                }`}>
+                  {agent.status}
+                </span>
+              </div>
+
+              {/* Description */}
+              <p className="text-xs text-slate-600 line-clamp-2 mb-4 leading-relaxed">
+                {agent.description}
+              </p>
+
+              {/* Key Meta Badges */}
+              <div className="grid grid-cols-2 gap-2 p-2.5 bg-slate-50 rounded-lg text-[11px] mb-4">
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Model Provider</span>
+                  <span className="font-semibold text-slate-700 truncate block">{agent.model_name}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Risk Tier</span>
+                  <span className={`font-semibold inline-block ${
+                    agent.risk_tier === 'HIGH' ? 'text-amber-600' : 'text-slate-700'
+                  }`}>
+                    {agent.risk_tier} Risk
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Assigned Tools</span>
+                  <span className="font-semibold text-slate-700">{agent.assigned_tools_count} Tools</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Knowledge Sources</span>
+                  <span className="font-semibold text-slate-700">{agent.knowledge_bases_count} Bases</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions Footer */}
+            <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+              <span className="text-[11px] text-slate-400">Run: {agent.last_execution}</span>
+              <div className="flex items-center gap-1.5">
+                <Link
+                  href={`/studio/agent?id=${agent.id}`}
+                  className="px-2.5 py-1 rounded-md border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold transition"
+                >
+                  Configure
+                </Link>
+                <Link
+                  href={`/conversations?agent=${agent.id}`}
+                  className="px-2.5 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold transition flex items-center gap-1"
+                >
+                  <Play className="h-3 w-3" />
+                  Test
+                </Link>
+              </div>
             </div>
           </div>
         ))}
       </div>
-
-      <div className="flex justify-between items-center bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
-        <div className="relative w-full max-w-md">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input 
-            type="text" 
-            placeholder="Search past tasks..." 
-            className="w-full pl-9 pr-4 py-2 bg-gray-50 border-none rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-          />
-        </div>
-      </div>
-
-      <Card noPadding className="flex-1">
-        {loading ? (
-          <LoadingState message="Loading AI tasks..." />
-        ) : error ? (
-          <div className="p-12 text-center text-red-600">
-            <div className="p-4 bg-red-50 rounded-lg inline-block border border-red-200">
-              {error}
-            </div>
-          </div>
-        ) : runs.length === 0 ? (
-          <div className="p-12">
-            <EmptyState 
-              title="No AI Tasks" 
-              description="AURA hasn't completed any tasks yet." 
-              icon={Bot} 
-              action={<Link href="/conversations" className="mt-4 inline-flex items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500"><Play className="w-4 h-4 mr-2" /> Start First Task</Link>}
-            />
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Task Request</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Started</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tools Used</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {runs.map((run) => (
-                  <tr key={run.run_id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center">
-                        <div className="flex-shrink-0 h-8 w-8 bg-blue-100 rounded-md flex items-center justify-center text-blue-600">
-                          <Bot className="h-5 w-5" />
-                        </div>
-                        <div className="ml-4 max-w-sm">
-                          <div className="text-sm font-medium text-gray-900 truncate">
-                            {run.user_request || "Unknown Task"}
-                          </div>
-                          <div className="text-xs text-blue-600 font-mono hover:underline mt-0.5">
-                            <Link href={`/observability`}>View technical details</Link>
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <StatusBadge status={run.status} />
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {new Date(run.started_at).toLocaleString()}
-                      <div className="text-xs text-gray-400 mt-1">{formatDistanceToNow(new Date(run.started_at))} ago</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 flex items-center gap-2">
-                      <Wrench className="w-4 h-4 text-gray-400" />
-                      {run.tool_call_count || 0} Actions Taken
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
     </div>
   );
 }
