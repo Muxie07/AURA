@@ -20,28 +20,40 @@ def mock_context():
 
 @pytest_asyncio.fixture(autouse=True)
 async def seed_customers(db_session, mock_context, other_tenant_context):
-    from app.database.models import Customer
+    import sqlalchemy as sa
+
+    from app.database.models import Customer, Organization
+    await db_session.execute(sa.text("DELETE FROM customers"))
+    await db_session.execute(sa.text("DELETE FROM products"))
+    org1 = Organization(id=mock_context.organization_id, name="Org1", slug="org1")
+    org2 = Organization(id=other_tenant_context.organization_id, name="Org2", slug="org2")
+    await db_session.merge(org1)
+    await db_session.merge(org2)
+    await db_session.flush()
 
     c1 = Customer(
-        id=str(uuid.uuid4()),
-        name="Acme Technologies",
-        email="acme@com",
-        organization_id=mock_context.organization_id,
+    id=str(uuid.uuid4()),
+    code="CUST-1",
+    name="Acme Technologies",
+    email="acme@com",
+    organization_id=mock_context.organization_id,
     )
     c2 = Customer(
-        id=str(uuid.uuid4()),
-        name="Another com",
-        email="another@com",
-        organization_id=mock_context.organization_id,
+    id=str(uuid.uuid4()),
+    code="CUST-2",
+    name="Another com",
+    email="another@com",
+    organization_id=mock_context.organization_id,
     )
     c3 = Customer(
-        id=str(uuid.uuid4()),
-        name="Acme Other",
-        email="acme2@com",
-        organization_id=other_tenant_context.organization_id,
+    id=str(uuid.uuid4()),
+    code="CUST-3",
+    name="Acme Other",
+    email="acme2@com",
+    organization_id=other_tenant_context.organization_id,
     )
     db_session.add_all([c1, c2, c3])
-    await db_session.commit()
+    await db_session.flush()
 
 
 @pytest.fixture

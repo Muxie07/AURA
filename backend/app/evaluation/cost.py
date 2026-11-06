@@ -1,15 +1,14 @@
 import uuid
+from datetime import UTC, datetime
 from typing import ClassVar
 
-import structlog
-import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import AsyncSession
 import redis.asyncio as aioredis
-from datetime import datetime, timezone
+import structlog
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.evaluation.schemas import BudgetCheck, BudgetStatus, CostEstimate
 from app.config.settings import get_settings
 from app.database.models import LLMUsage
+from app.evaluation.schemas import BudgetCheck, BudgetStatus, CostEstimate
 
 logger = structlog.get_logger(__name__)
 
@@ -105,11 +104,11 @@ class CostManager:
     ) -> BudgetCheck:
         redis = await cls.get_redis()
         org_key = str(organization_id)
-        
-        now = datetime.now(timezone.utc)
+
+        now = datetime.now(UTC)
         daily_key = f"budget:daily:{org_key}:{now.strftime('%Y%m%d')}"
         monthly_key = f"budget:monthly:{org_key}:{now.strftime('%Y%m')}"
-        
+
         try:
             res = await redis.eval(
                 LUA_SCRIPT,
@@ -120,14 +119,14 @@ class CostManager:
                 DEFAULT_ORG_DAILY_BUDGET_USD,
                 DEFAULT_ORG_MONTHLY_BUDGET_USD
             )
-            success, daily_spend, monthly_spend, msg = res
+            success, daily_spend, _monthly_spend, msg = res
             status = BudgetStatus.OK
             message = "Within budget"
-            
+
             if not success:
                 status = BudgetStatus.EXCEEDED
                 message = f"Budget exceeded: {msg.decode('utf-8')}"
-                
+
             return BudgetCheck(
                 run_id=run_id,
                 organization_id=organization_id,
@@ -170,10 +169,18 @@ class CostManager:
             agent_run_id=agent_run_id,
             provider=provider,
             model=model,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            total_tokens=input_tokens + output_tokens,
+            prompt_tokens=input_tokens,
+            completion_tokens=output_tokens,
             cost_usd=total_cost,
         )
         db.add(usage)
         await db.commit()
+
+    @classmethod
+    async def reset_daily_spend(cls, organization_id: uuid.UUID) -> None:
+        redis = await cls.get_redis()
+        now = datetime.now(UTC)
+        org_key = str(organization_id)
+        daily_key = f"budget:daily:{org_key}:{now.strftime('%Y%m%d')}"
+        monthly_key = f"budget:monthly:{org_key}:{now.strftime('%Y%m')}"
+        await redis.delete(daily_key, monthly_key)

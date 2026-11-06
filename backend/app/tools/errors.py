@@ -36,3 +36,7 @@ class ToolExecutionError(ToolError):
 class TenantIsolationError(ToolAuthorizationError):
     def __init__(self, message: str = "Cross-tenant access denied."):
         super().__init__(message)
+
+class ToolCircuitBreakerError(ToolError):
+    def __init__(self, message: str):
+        super().__init__(message, retryable=False, error_type="circuit_breaker_error")

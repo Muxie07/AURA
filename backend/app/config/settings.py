@@ -173,14 +173,16 @@ class Settings(BaseSettings):
         description="LLM provider to use.",
     )
     primary_llm_model: str = Field(
-        default="gemini-2.5-flash",
+        default="gemini-3.8-flash",
         validation_alias=AliasChoices("PRIMARY_LLM_MODEL", "MODEL_NAME"),
         description="Model identifier.",
     )
     fallback_llm_provider: ModelProvider | None = Field(
-        default=None, description="Optional fallback provider"
+        default=ModelProvider.HEURISTIC, description="Optional fallback provider"
     )
-    fallback_llm_model: str | None = Field(default=None, description="Optional fallback model name")
+    fallback_llm_model: str | None = Field(
+        default="heuristic-fallback", description="Optional fallback model name"
+    )
     model_temperature: float = Field(
         default=0.1,
         ge=0.0,
@@ -209,9 +211,9 @@ class Settings(BaseSettings):
     )
 
     # Phase 6: Intelligent Model Routing
-    fast_model: str = Field(default="gemini-1.5-flash")
-    reasoning_model: str = Field(default="gemini-1.5-pro")
-    long_context_model: str = Field(default="gemini-1.5-pro")
+    fast_model: str = Field(default="gemini-3.8-flash")
+    reasoning_model: str = Field(default="gemini-3.8-flash")
+    long_context_model: str = Field(default="gemini-3.8-flash")
 
     # Phase 6: Limits
     max_replan_attempts: int = Field(default=2, ge=0)

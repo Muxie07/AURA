@@ -29,21 +29,23 @@ class RAGService:
         self.context_builder = ContextBuilder()
 
     async def query(
-        self, organization_id: uuid.UUID, knowledge_base_id: uuid.UUID, question: str
+        self,
+        organization_id: uuid.UUID,
+        knowledge_base_id: uuid.UUID | None = None,
+        question: str = "",
     ) -> RAGResponse:
 
         # Expand query
         expanded_query = question
         try:
-            expanded_query = await self.llm.generate_simple(
+            exp = await self.llm.generate_simple(
                 prompt=f"Generate synonyms and closely related keywords for this query: '{question}'. Return a single string with the original query and the new keywords, space-separated.",
                 system_prompt="You are a search query expansion assistant. Return ONLY the expanded query string, no other text.",
             )
-            if not expanded_query.strip():
-                expanded_query = question
+            if exp and exp.strip() and not any(phrase in exp.lower() for phrase in ["offline", "fallback mode", "how else can i assist", "i cannot perform"]):
+                expanded_query = exp.strip()
         except Exception as e:
             logger.warning("query_expansion_failed", error=str(e))
-            pass
 
         # 1. Retrieve candidates
         candidates = await self.retriever.search(

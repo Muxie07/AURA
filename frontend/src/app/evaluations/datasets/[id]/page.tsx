@@ -1,16 +1,19 @@
 ﻿"use client";
 import { useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
 import { fetchApi } from '../../../lib/api';
 import Link from 'next/link';
 
-export default function DatasetDetailsPage({ params }: { params: { id: string } }) {
+export default function DatasetDetailsPage() {
+  const params = useParams();
+  const id = params?.id as string;
   const [data, setData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetchApi(`/eval/datasets/${params.id}`);
+        const res = await fetchApi(`/eval/datasets/${id}`);
         if (res.ok) {
           setData(await res.json());
         }
@@ -20,7 +23,7 @@ export default function DatasetDetailsPage({ params }: { params: { id: string } 
       setIsLoading(false);
     }
     load();
-  }, [params.id]);
+  }, [id]);
 
   if (isLoading) return <div className="p-8">Loading dataset details...</div>;
   if (!data) return <div className="p-8">Failed to load dataset.</div>;

@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from app.config.settings import Environment, Settings, get_settings
+from app.config.settings import Environment, ModelProvider, Settings, get_settings
 from app.database.base import Base, get_db_session
 from app.database.models import (
     Conversation,
@@ -40,16 +40,23 @@ if TYPE_CHECKING:
 # Test Settings Override
 # =============================================================================
 
+import os
+
+os.environ["AURA_SECRET_KEY"] = "test-secret-key-at-least-32-characters-long"
+
 TEST_SETTINGS = Settings(
     aura_env=Environment.DEVELOPMENT,
     aura_debug=True,
     aura_secret_key="test-secret-key-at-least-32-characters-long",  # type: ignore[arg-type]
-    postgres_host="localhost",
+    postgres_host=os.environ.get("POSTGRES_HOST", "postgres"),
     postgres_db="aura_test",
-    postgres_user="aura",
-    postgres_password="aura-dev-password",  # type: ignore[arg-type]
+    postgres_user=os.environ.get("POSTGRES_USER", "aura"),
+    postgres_password=os.environ.get("POSTGRES_PASSWORD", "aura_password"),  # type: ignore[arg-type]
+    redis_host=os.environ.get("REDIS_HOST", "redis"),
+    redis_port=int(os.environ.get("REDIS_PORT", "6379")),
     aura_log_format="text",  # type: ignore[arg-type]
     aura_log_level="WARNING",  # Quiet during tests
+    primary_llm_provider=ModelProvider.MOCK,
 )
 
 
@@ -58,17 +65,18 @@ TEST_SETTINGS = Settings(
 # =============================================================================
 
 
-@pytest.fixture(scope="session")
-def postgres_engine():
+@pytest_asyncio.fixture(scope="session")
+async def postgres_engine():
     engine = create_async_engine(
         TEST_SETTINGS.database_url,
         pool_size=5,
         max_overflow=10,
         echo=False,
     )
-    return engine
+    yield engine
+    await engine.dispose()
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(scope="session")
 async def create_tables(postgres_engine):
     async with postgres_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
@@ -85,11 +93,25 @@ async def db_session(postgres_engine, create_tables):
         expire_on_commit=False,
         autoflush=False,
     )
+    import contextlib
+
     import app.database.base
-    app.database.base._session_factory = factory
-    async with factory() as session, session.begin():
-        yield session
-        await session.rollback()
+    class FakeFactory:
+        def __call__(self):
+            @contextlib.asynccontextmanager
+            async def _cm():
+                yield session
+            return _cm()
+    app.database.base._session_factory = FakeFactory()
+
+
+    async with factory() as session:
+        await session.begin()
+        try:
+            yield session
+        finally:
+            if session.in_transaction():
+                await session.rollback()
     app.database.base._session_factory = None
 
 # =============================================================================
@@ -106,7 +128,26 @@ async def app(db_session: AsyncSession) -> FastAPI:
     real connection pool.
     """
     # Patch settings to use test configuration
-    get_settings.cache_clear()
+    def mock_get_settings():
+        env_provider = os.environ.get("PRIMARY_LLM_PROVIDER", os.environ.get("AURA_MODEL_PROVIDER"))
+        if env_provider:
+            try:
+                TEST_SETTINGS.primary_llm_provider = ModelProvider(env_provider.lower())
+            except ValueError:
+                TEST_SETTINGS.primary_llm_provider = ModelProvider.MOCK
+        else:
+            TEST_SETTINGS.primary_llm_provider = ModelProvider.MOCK
+        return TEST_SETTINGS
+
+    mock_get_settings.cache_clear = lambda: None
+
+    import app.config.settings
+    import app.security.rate_limit
+    import app.tools.mcp.routes
+
+    app.config.settings.get_settings = mock_get_settings
+    app.tools.mcp.routes.get_settings = mock_get_settings
+    app.security.rate_limit.get_settings = mock_get_settings
 
     from app.main import create_app
 
@@ -141,24 +182,28 @@ async def client(app: FastAPI) -> AsyncGenerator[AsyncClient, None]:
     from jose import jwt
 
     token = jwt.encode(
-        {"sub": str(_DEFAULT_USER_ID), "org_id": str(_DEFAULT_ORG_ID), "exp": 9999999999},
+        {"sub": str(_DEFAULT_USER_ID), "org_id": str(_DEFAULT_ORG_ID), "exp": 9999999999, "iss": "aura", "aud": "aura"},
         TEST_SETTINGS.aura_secret_key.get_secret_value(),
         algorithm="HS256",
     )
     async with AsyncClient(
         transport=ASGITransport(app=app),
-        base_url="http://test",
+        base_url="http://testserver",
         headers={"Authorization": f"Bearer {token}"},
     ) as ac:
         yield ac
+
+
 
 
 # =============================================================================
 # Model Factories
 # =============================================================================
 
-_DEFAULT_ORG_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
-_DEFAULT_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000002")
+def get_org_id(): return uuid.uuid4()
+_DEFAULT_ORG_ID = get_org_id()
+def get_user_id(): return uuid.uuid4()
+_DEFAULT_USER_ID = get_user_id()
 
 
 @pytest_asyncio.fixture
@@ -171,7 +216,7 @@ async def organization(db_session: AsyncSession) -> Organization:
         is_active=True,
         settings={},
     )
-    db_session.add(org)
+    org = await db_session.merge(org)
     await db_session.flush()
     return org
 
@@ -185,10 +230,10 @@ async def user(db_session: AsyncSession, organization: Organization) -> User:
         email="test@example.com",
         full_name="Test User",
         is_active=True,
-        is_superuser=False,
+
         metadata_={},
     )
-    db_session.add(u)
+    u = await db_session.merge(u)
     await db_session.flush()
     return u
 
@@ -207,7 +252,7 @@ async def conversation(
         status=ConversationStatus.ACTIVE,
         metadata_={},
     )
-    db_session.add(conv)
+    conv = await db_session.merge(conv)
     await db_session.flush()
     return conv
 

@@ -148,8 +148,8 @@ class ToolRegistry:
             approval_stmt = sa.text("""
                 UPDATE approval_requests
                 SET status = 'executed', updated_at = :now
-                WHERE agent_run_id = :run_id 
-                  AND tool_name = :tool_name 
+                WHERE agent_run_id = :run_id
+                  AND tool_name = :tool_name
                   AND status = 'approved'
                   AND args_hash = :args_hash
                   AND expires_at > :now

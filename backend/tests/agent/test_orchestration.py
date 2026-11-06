@@ -1,4 +1,5 @@
 import uuid
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -75,7 +76,7 @@ async def test_parallel_dependencies(monkeypatch):
     monkeypatch.setattr(PolicyEngine, "evaluate", lambda ctx: MockPolicyDecision())
 
     exec = ExecutionNode(registry)
-    state = await exec._execute(state)
+    state = await exec._execute(state, db=AsyncMock())
     assert len(state.action_history) == 2
 
     class MockLLM2:

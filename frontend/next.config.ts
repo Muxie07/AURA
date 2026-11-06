@@ -6,15 +6,24 @@ const cspHeader = `
     style-src 'self' 'unsafe-inline';
     img-src 'self' blob: data:;
     font-src 'self';
+    connect-src 'self' http://localhost:8000 ws://localhost:8000 http://127.0.0.1:8000 ws://127.0.0.1:8000;
     object-src 'none';
     base-uri 'self';
     form-action 'self';
     frame-ancestors 'none';
-    ${process.env.NODE_ENV === 'production' ? 'upgrade-insecure-requests;' : ''}
+    ${process.env.NODE_ENV === 'production' && (!process.env.NEXT_PUBLIC_API_URL?.includes('localhost') && !process.env.NEXT_PUBLIC_API_URL?.includes('127.0.0.1')) ? 'upgrade-insecure-requests;' : ''}
 `
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  async rewrites() {
+    return [
+      {
+        source: '/api/v1/:path*',
+        destination: 'http://backend:8000/api/v1/:path*',
+      },
+    ];
+  },
   async headers() {
     return [
       {

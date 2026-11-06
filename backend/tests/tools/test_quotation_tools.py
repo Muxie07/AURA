@@ -21,40 +21,51 @@ def mock_context():
 
 @pytest_asyncio.fixture(autouse=True)
 async def seed_customers(db_session, mock_context, other_tenant_context):
-    from app.database.models import Customer, Product
+    import sqlalchemy as sa
+
+    from app.database.models import Customer, Organization, Product
+    await db_session.execute(sa.text("DELETE FROM customers"))
+    await db_session.execute(sa.text("DELETE FROM products"))
+    org1 = Organization(id=mock_context.organization_id, name="Org1", slug="org1")
+    org2 = Organization(id=other_tenant_context.organization_id, name="Org2", slug="org2")
+    await db_session.merge(org1)
+    await db_session.merge(org2)
+    await db_session.flush()
 
     c1 = Customer(
-        id=str(uuid.uuid4()),
-        name="Acme Technologies",
-        email="acme@com",
-        organization_id=mock_context.organization_id,
+    id=str(uuid.uuid4()),
+    code="CUST-1",
+    name="Acme Technologies",
+    email="acme@com",
+    organization_id=mock_context.organization_id,
     )
     c3 = Customer(
-        id=str(uuid.uuid4()),
-        name="Acme Other",
-        email="acme2@com",
-        organization_id=other_tenant_context.organization_id,
+    id=str(uuid.uuid4()),
+    code="CUST-3",
+    name="Acme Other",
+    email="acme2@com",
+    organization_id=other_tenant_context.organization_id,
     )
     org_id_str1 = str(mock_context.organization_id)[:8]
     org_id_str2 = str(other_tenant_context.organization_id)[:8]
     p1 = Product(
-        id=f"PROD-X-{org_id_str1}",
-        name="Test Prod",
-        sku="SKU-1",
-        availability="in_stock",
-        base_price=100.0,
-        organization_id=mock_context.organization_id,
+    id=f"PROD-X-{org_id_str1}",
+    name="Test Prod",
+    sku="SKU-1",
+    availability="in_stock",
+    base_price=100.0,
+    organization_id=mock_context.organization_id,
     )
     p2 = Product(
-        id=f"PROD-X-{org_id_str2}",
-        name="Test Prod 2",
-        sku="SKU-2",
-        availability="in_stock",
-        base_price=100.0,
-        organization_id=other_tenant_context.organization_id,
+    id=f"PROD-X-{org_id_str2}",
+    name="Test Prod 2",
+    sku="SKU-2",
+    availability="in_stock",
+    base_price=100.0,
+    organization_id=other_tenant_context.organization_id,
     )
     db_session.add_all([c1, c3, p1, p2])
-    await db_session.commit()
+    await db_session.flush()
 
 
 @pytest.fixture

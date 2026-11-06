@@ -141,6 +141,8 @@ class RequestMetricsMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
         except Exception:
+            import traceback
+            traceback.print_exc()
             logger.error(
                 "unhandled_exception",
                 path=request.url.path,

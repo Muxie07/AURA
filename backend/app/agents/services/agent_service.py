@@ -1,6 +1,5 @@
 import uuid
 from datetime import UTC, datetime
-from typing import Any
 
 import sqlalchemy as sa
 import structlog
@@ -24,10 +23,11 @@ logger = structlog.get_logger(__name__)
 
 
 class AgentWorkflowService:
-    def __init__(self, db: AsyncSession, llm: LLMService, rag: RAGService):
+    def __init__(self, db: AsyncSession, llm: LLMService, rag: RAGService, mcp_manager=None):
         self.db = db
         self.llm = llm
         self.rag = rag
+        self.mcp_manager = mcp_manager
 
         self.action_registry = ToolRegistry()
         register_builtin_tools(self.action_registry)
@@ -36,8 +36,8 @@ class AgentWorkflowService:
 
     async def initialize(self, organization_id: uuid.UUID):
         import os
-        mcp_url = os.environ.get("MCP_SERVER_URL", "http://localhost:8000/api/v1/mcp/messages")
-        
+        mcp_url = os.environ.get("MCP_SERVER_URL", "http://mcp-server:8000/api/v1/mcp/messages")
+
         if self.mcp_manager:
             mcp_executors = await self.mcp_manager.discover_tools(mcp_url, str(organization_id))
             for executor in mcp_executors:
@@ -64,7 +64,7 @@ class AgentWorkflowService:
         graph.add_node(AgentNodeState.FAILED, FailureNode())
 
         # 2. Transitions (only invoked if Node does not explicitly mutate `state.status`)
-        graph.add_transition(AgentNodeState.CREATED, lambda s: AgentNodeState.UNDERSTANDING)
+        graph.add_transition(AgentNodeState.CREATED, lambda s: AgentNodeState.PLANNING)
         graph.add_transition(AgentNodeState.UNDERSTANDING, lambda s: AgentNodeState.PLANNING)
         graph.add_transition(AgentNodeState.PLANNING, lambda s: AgentNodeState.RETRIEVING)
         graph.add_transition(AgentNodeState.RETRIEVING, lambda s: AgentNodeState.UNDERSTANDING)
@@ -139,6 +139,7 @@ class AgentWorkflowService:
 
             if run.status == AgentRunStatus.COMPLETED and run.final_response:
                 assistant_msg = Message(
+                    organization_id=run.organization_id,
                     conversation_id=run.conversation_id,
                     role=MessageRole.ASSISTANT,
                     content=run.final_response,
@@ -152,6 +153,7 @@ class AgentWorkflowService:
                     else f"AURA encountered an error: {run.error_message}"
                 )
                 assistant_msg = Message(
+                    organization_id=run.organization_id,
                     conversation_id=run.conversation_id,
                     role=MessageRole.ASSISTANT,
                     content=msg_content,
@@ -170,6 +172,7 @@ class AgentWorkflowService:
             run.completed_at = datetime.now(UTC)
 
             assistant_msg = Message(
+                organization_id=run.organization_id,
                 conversation_id=run.conversation_id,
                 role=MessageRole.ASSISTANT,
                 content=f"AURA encountered a critical error during execution: {e}",

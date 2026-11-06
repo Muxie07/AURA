@@ -104,8 +104,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.error("stuck_run_recovery_failed", error=str(e))
 
-    from app.tools.registry import ToolRegistry
     from app.tools.mcp.client import MCPClientManager
+    from app.tools.registry import ToolRegistry
 
     registry = ToolRegistry()
     app.state.tool_registry = registry
@@ -150,13 +150,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 
 async def global_exception_handler(request: Request, exc: Exception):
-    import traceback
     from fastapi.responses import JSONResponse
+
     from app.observability.logging import get_logger
-    
+
     logger = get_logger("app.main")
     logger.error("Unhandled global exception", error=str(exc), exc_info=exc)
-    
+
     return JSONResponse(
         status_code=500,
         content={"error": {"code": "internal_error", "message": "Internal Server Error"}},
@@ -226,7 +226,6 @@ def create_app() -> FastAPI:
     @app.get("/ready", tags=["health"])
     async def readiness_check():
         """Detailed readiness probe (DB, Redis, Migrations)."""
-        settings = get_settings()
         import sqlalchemy as sa
         from fastapi import HTTPException
 
@@ -260,7 +259,7 @@ def create_app() -> FastAPI:
                 status["mcp"] = "ok" # Non-fatal
         except Exception:
             status["mcp"] = "unknown"
-            
+
         return status
 
     app.include_router(api_v1_router)

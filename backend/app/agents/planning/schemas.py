@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -24,18 +26,26 @@ class StructuredAgentPlan(BaseModel):
 
 
 class IntentUnderstanding(BaseModel):
+    intent: str = Field(..., description="The classified primary intent of the user (e.g. 'search_customer', 'create_quotation', 'general_query').")
+    entities: dict[str, Any] = Field(
+        default_factory=dict, description="Extracted entities from the request (e.g. {'customer_name': 'Acme', 'action': 'create_quotation'})."
+    )
+    confidence: float = Field(..., description="Confidence score from 0.0 to 1.0 of this understanding.")
+    requires_clarification: bool = Field(
+        ..., description="True if the request is ambiguous (e.g. 'create one', 'do it') and the context is insufficient, requiring clarification."
+    )
+    clarification_question: str | None = Field(
+        None, description="A concise question to ask the user if clarification is needed."
+    )
     normalized_request: str = Field(
         ...,
-        description="The user's request rewritten safely, grammatically correct, and disambiguated.",
+        description="The user's request rewritten to fix typos, correct grammar, and resolve pronouns using conversation context. Do NOT guess destructive intents.",
+    )
+    candidate_tools: list[str] = Field(
+        default_factory=list, description="List of tool names that might be relevant to satisfy this intent."
     )
     is_safe: bool = Field(
         ...,
-        description="True if the request is safe and clear. False if it is ambiguous, destructive, or lacks required context for a write operation.",
+        description="True if the request is safe. False if it implies a destructive action without explicit context.",
     )
-    reasoning: str = Field(..., description="Reasoning for the safety assessment.")
-    requires_clarification: bool = Field(
-        ..., description="True if the request is ambiguous and needs user clarification."
-    )
-    clarification_question: str | None = Field(
-        None, description="The question to ask the user if clarification is needed."
-    )
+    reasoning: str = Field(..., description="Reasoning for the safety and intent assessment.")

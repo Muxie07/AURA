@@ -6,7 +6,7 @@ from app.tools.mcp.server import call_tool, mcp_org_id, mcp_permissions
 
 
 @pytest.mark.asyncio
-async def test_mcp_tenant_isolation_unauthenticated(client):
+async def test_mcp_tenant_isolation_unauthenticated(client, organization):
     # Calling the tool without context
     # Ensure contextvars are empty
     # By default in a new task they should be empty if not set
@@ -15,8 +15,8 @@ async def test_mcp_tenant_isolation_unauthenticated(client):
 
 
 @pytest.mark.asyncio
-async def test_mcp_tenant_isolation_authenticated(client):
-    org_id = uuid.uuid4()
+async def test_mcp_tenant_isolation_authenticated(client, organization):
+    org_id = organization.id
     # Mock the ASGI contextvar middleware behavior
     mcp_org_id.set(org_id)
     mcp_permissions.set(["tools:read", "tools:write", "tools:external"])
@@ -28,8 +28,8 @@ async def test_mcp_tenant_isolation_authenticated(client):
 
 
 @pytest.mark.asyncio
-async def test_mcp_authorization_failure(client):
-    org_id = uuid.uuid4()
+async def test_mcp_authorization_failure(client, organization):
+    org_id = organization.id
     mcp_org_id.set(org_id)
     mcp_permissions.set(["tools:read"])  # Missing write
 
@@ -38,9 +38,9 @@ async def test_mcp_authorization_failure(client):
 
 
 @pytest.mark.asyncio
-async def test_mcp_anti_spoofing(client):
-    org_id = uuid.uuid4()
-    fake_org_id = uuid.uuid4()
+async def test_mcp_anti_spoofing(client, organization):
+    org_id = organization.id
+    fake_org_id = organization.id
 
     mcp_org_id.set(org_id)
     mcp_permissions.set(["tools:read"])

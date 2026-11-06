@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
 import { APIError, fetchApi } from '../../../lib/api';
 import Link from 'next/link';
 import { CheckCircleIcon, XCircleIcon } from '@heroicons/react/24/solid';
@@ -13,7 +14,9 @@ type RunDetails = {
   results: EvaluationResult[];
 };
 
-export default function RunDetailsPage({ params }: { params: { id: string } }) {
+export default function RunDetailsPage() {
+  const params = useParams();
+  const id = params?.id as string;
   const [data, setData] = useState<RunDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -22,8 +25,9 @@ export default function RunDetailsPage({ params }: { params: { id: string } }) {
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const load = async () => {
+      if (!id) return;
       try {
-        const response = await fetchApi('/eval/runs/' + params.id);
+        const response = await fetchApi('/eval/runs/' + id);
         const next = await response.json() as RunDetails;
         if (stopped) return;
         setData(next);
@@ -42,7 +46,7 @@ export default function RunDetailsPage({ params }: { params: { id: string } }) {
     };
     void load();
     return () => { stopped = true; if (timer) clearTimeout(timer); };
-  }, [params.id]);
+  }, [id]);
 
   if (isLoading) return <div className="p-8">Loading run details...</div>;
   if (!data) return <div className="p-8 text-red-700" role="alert">Failed to load evaluation run: {loadError || 'No response.'}</div>;

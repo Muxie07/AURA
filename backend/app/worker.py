@@ -1,4 +1,5 @@
 import uuid
+from typing import ClassVar
 
 import structlog
 from arq.connections import RedisSettings
@@ -16,10 +17,13 @@ logger = structlog.get_logger(__name__)
 async def startup(ctx):
     logger.info("Worker starting up")
     settings = get_settings()
+    from app.database.base import initialize_database
+    await initialize_database()
     ctx["session_factory"] = get_session_factory()
+
+    ctx["mcp_manager"] = MCPClientManager()
     ctx["llm"] = LLMService()
     ctx["settings"] = settings
-    ctx["mcp_manager"] = MCPClientManager()
 
 async def shutdown(ctx):
     logger.info("Worker shutting down")
@@ -27,7 +31,7 @@ async def shutdown(ctx):
 
 async def run_agent(ctx, run_id_str: str):
     run_id = uuid.UUID(run_id_str)
-    
+
     import structlog
     structlog.contextvars.clear_contextvars()
     trace_id = f"worker_{uuid.uuid4().hex[:12]}"
@@ -51,7 +55,7 @@ async def run_agent(ctx, run_id_str: str):
         org_id = run.organization_id
 
         rag = RAGService(db, llm)
-        agent_service = AgentWorkflowService(db, llm, rag, mcp_manager=ctx["mcp_manager"])
+        agent_service = AgentWorkflowService(db, llm, rag, mcp_manager=ctx.get("mcp_manager"))
 
         await agent_service.initialize(org_id)
         try:
@@ -69,7 +73,7 @@ except Exception:
 
 
 class WorkerSettings:
-    functions = [run_agent]
+    functions: ClassVar[list] = [run_agent]
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(_redis_url)

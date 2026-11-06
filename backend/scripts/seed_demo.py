@@ -29,6 +29,7 @@ from app.database.models import (
     ToolCall,
     ToolCallStatus,
     User,
+    UserRole,
 )
 
 PASSWORD_HASH = "$2b$12$1YhZv42JKpAkpOxL2sl8sOz/pTDXgpnHRK/U8PPdlrUChzkTMvnWC"  # demo1234
@@ -76,7 +77,7 @@ async def seed_data():
             organization_id=org1.id,
             email="admin@aura-sre.com",
             full_name="Admin User",
-            is_superuser=True,
+            role=UserRole.ADMIN,
             hashed_password=PASSWORD_HASH,
             metadata_={"role": "Admin"},
         )
@@ -84,7 +85,7 @@ async def seed_data():
             organization_id=org1.id,
             email="manager@aura-sre.com",
             full_name="Manager User",
-            is_superuser=False,
+            role=UserRole.MEMBER,
             hashed_password=PASSWORD_HASH,
             metadata_={"role": "Manager"},
         )
@@ -92,7 +93,7 @@ async def seed_data():
             organization_id=org1.id,
             email="demo@aura-sre.com",
             full_name="Demo Operator",
-            is_superuser=True,
+            role=UserRole.ADMIN,
             hashed_password=PASSWORD_HASH,
             metadata_={"role": "Lead SRE"},
         )
@@ -100,7 +101,7 @@ async def seed_data():
             organization_id=org1.id,
             email="analyst@aura-sre.com",
             full_name="Analyst User",
-            is_superuser=False,
+            role=UserRole.MEMBER,
             hashed_password=PASSWORD_HASH,
             metadata_={"role": "Analyst"},
         )
@@ -110,7 +111,7 @@ async def seed_data():
             organization_id=org2.id,
             email="admin@global-enterprises.com",
             full_name="Global Admin",
-            is_superuser=True,
+            role=UserRole.ADMIN,
             hashed_password=PASSWORD_HASH,
             metadata_={"role": "Admin"},
         )
@@ -118,7 +119,7 @@ async def seed_data():
             organization_id=org3.id,
             email="admin@nova-systems.com",
             full_name="Nova Admin",
-            is_superuser=True,
+            role=UserRole.ADMIN,
             hashed_password=PASSWORD_HASH,
             metadata_={"role": "Admin"},
         )
@@ -132,18 +133,21 @@ async def seed_data():
 
         cust1 = Customer(
             id="cust-001",
+            code="CUST-001",
             organization_id=org1.id,
             name="Acme Technologies",
             email="contact@acme.com",
         )
         cust2 = Customer(
             id=f"CUST-001-{org1_uuid_str}",
+            code=f"CUST-001-{org1_uuid_str}",
             organization_id=org1.id,
             name="Acme Technologies (Fallback)",
             email="contact2@acme.com",
         )
         cust3 = Customer(
             id="CUST-003",
+            code="CUST-003",
             organization_id=org1.id,
             name="Nova Engineering",
             email="procurement@nova.net",
@@ -195,6 +199,7 @@ async def seed_data():
             ("Customer Support Knowledge", "Support articles and FAQs"),
             ("Sales Playbooks", "Sales strategies and scripts"),
             ("Security Procedures", "Security incident response plans"),
+            ("Distribution Price Lists", "Cloud Infotech Distribution Price List, Dinstar VoIP GSM Volte Gateways, IP PBX, Session Border Controllers, GST 18%, and Tax Invoices"),
         ]
 
         for name, desc in kb_topics:
@@ -204,13 +209,26 @@ async def seed_data():
         await session.flush()
 
         # 4. Documents & Chunks
+        price_list_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "app", "knowledge", "docs", "cloud_infotech_price_list_v1.md"
+        )
+        price_list_content = ""
+        if os.path.exists(price_list_path):
+            with open(price_list_path, "r", encoding="utf-8") as f:
+                price_list_content = f.read()
+
         for i, kb in enumerate(kbs):
+            is_price_list = (kb.name == "Distribution Price Lists")
+            filename = "cloud_infotech_price_list_v1.md" if is_price_list else f"{kb.name.lower().replace(' ', '_')}_v1.md"
+            content = price_list_content if is_price_list and price_list_content else f"This is the core content for {kb.name}. Important policies and procedures are outlined here."
+
             doc = Document(
                 knowledge_base_id=kb.id,
                 organization_id=org1.id,
-                filename=f"{kb.name.lower().replace(' ', '_')}_v1.md",
+                filename=filename,
                 content_type="text/markdown",
-                file_size=2048 + (i * 100),
+                file_size=len(content.encode("utf-8")),
                 status=DocumentStatus.READY,
                 indexed_at=now - timedelta(days=2),
             )
@@ -221,8 +239,8 @@ async def seed_data():
                 document_id=doc.id,
                 organization_id=org1.id,
                 chunk_index=0,
-                content=f"This is the core content for {kb.name}. Important policies and procedures are outlined here.",
-                token_count=18,
+                content=content,
+                token_count=len(content.split()),
                 embedding=[0.01] * 1536,
                 embedding_model="text-embedding-3-small",
             )
@@ -286,6 +304,7 @@ async def seed_data():
             error_msg = "API timeout" if run_status == AgentRunStatus.FAILED else None
 
             run = AgentRun(
+                organization_id=org.id,
                 conversation_id=conv.id,
                 user_id=user.id,
                 status=run_status,
@@ -364,7 +383,9 @@ async def seed_data():
                         tool_name="restart_service",
                         action_summary="Restart nginx",
                         action_details={"service": "nginx"},
+                        args_hash="mock_hash_restart_nginx",
                         status=ApprovalStatus.APPROVED,
+                        expires_at=run.started_at + timedelta(hours=24),
                         actioned_by_id=user.id,
                         actioned_at=run.started_at + timedelta(minutes=1, seconds=2),
                     )
@@ -387,7 +408,9 @@ async def seed_data():
                     tool_name="kill_process",
                     action_summary="Kill process 4519",
                     action_details={"pid": 4519},
+                    args_hash="mock_hash_kill_process",
                     status=ApprovalStatus.PENDING,
+                    expires_at=run.started_at + timedelta(hours=24),
                 )
                 session.add(app_req)
                 await session.flush()
@@ -411,7 +434,9 @@ async def seed_data():
                         tool_name="order.create",
                         action_summary="Create order",
                         action_details={"item": "Server"},
+                        args_hash="mock_hash_order_create",
                         status=ApprovalStatus.DENIED,
+                        expires_at=run.started_at + timedelta(hours=24),
                         actioned_by_id=user.id,
                         actioned_at=run.started_at + timedelta(minutes=1),
                     )

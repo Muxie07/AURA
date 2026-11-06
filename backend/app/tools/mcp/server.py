@@ -100,7 +100,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     context = ToolContext(
         organization_id=org_id,
-        agent_run_id=uuid.uuid4(),
+        agent_run_id=None,
         execution_id=uuid.uuid4().hex,
         dry_run=arguments.pop("_dry_run", False),
         idempotency_key=arguments.pop("_idempotency_key", None),
@@ -126,7 +126,11 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     if policy_decision.decision == PolicyDecision.REQUIRE_APPROVAL:
         return [TextContent(type="text", text=f"Error: REQUIRE_APPROVAL: {policy_decision.reason}")]
 
-    result = await mcp_registry.execute(name, arguments, context)
+    from app.database.base import get_session_factory as _get_factory
+    factory = _get_factory()
+    async with factory() as session:
+        result = await mcp_registry.execute(session, name, arguments, context)
+        await session.commit()
     if result.status == "failed":
         return [TextContent(type="text", text=f"Error: {result.message}")]
 

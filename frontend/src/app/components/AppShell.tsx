@@ -35,15 +35,29 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
+  const isConversationsPage = pathname === '/conversations';
+
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex h-screen h-[100dvh] w-screen max-w-full overflow-hidden bg-gray-50">
       <Sidebar />
-      <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+      <div className="flex flex-col flex-1 min-w-0 h-full overflow-hidden">
         <Topnav />
-        <main className="flex-1 overflow-y-auto bg-gray-50">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-            {children}
-          </div>
+        <main
+          className={`flex-1 min-h-0 bg-gray-50 ${
+            isConversationsPage
+              ? 'overflow-hidden flex flex-col p-2 sm:p-4'
+              : 'overflow-y-auto'
+          }`}
+        >
+          {isConversationsPage ? (
+            <div className="flex-1 min-h-0 h-full flex flex-col">
+              {children}
+            </div>
+          ) : (
+            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+              {children}
+            </div>
+          )}
         </main>
       </div>
     </div>

@@ -22,6 +22,20 @@ from datetime import UTC
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
+
+class FakeDB:
+    async def execute(self, *args, **kwargs):
+        class FakeScalars:
+            def first(self): return None
+        class FakeResult:
+            def scalars(self): return FakeScalars()
+        return FakeResult()
+    def add(self, *args, **kwargs): pass
+    async def commit(self, *args, **kwargs): pass
+
+fake_db = FakeDB()
+
+
 import pytest
 
 from app.tools.builtin import register_builtin_tools
@@ -156,7 +170,7 @@ async def test_valid_input_accepted(registry: ToolRegistry, tool_context: ToolCo
     with patch("app.security.rate_limit.get_redis_client") as mock_get:
         mock_get.return_value = _make_redis_mock(tool_context.organization_id, SAMPLE_METRICS)
         result = await registry.execute(
-            "observability.get_api_latency",
+            fake_db, "observability.get_api_latency",
             {"time_range": "24h"},
             tool_context,
         )
@@ -168,7 +182,7 @@ async def test_missing_time_range_fails_validation(
     registry: ToolRegistry, tool_context: ToolContext
 ) -> None:
     result = await registry.execute(
-        "observability.get_api_latency",
+        None, "observability.get_api_latency",
         {},  # time_range is required
         tool_context,
     )
@@ -213,7 +227,7 @@ async def test_tenant_isolation(
         mock_get.side_effect = get_redis_for_org
 
         result_a = await registry.execute(
-            "observability.get_api_latency",
+            fake_db, "observability.get_api_latency",
             {"time_range": "24h"},
             ctx_a,
         )
@@ -236,7 +250,7 @@ async def test_real_latency_retrieval(
     with patch("app.security.rate_limit.get_redis_client") as mock_get:
         mock_get.return_value = _make_redis_mock(org_id, SAMPLE_METRICS)
         result = await registry.execute(
-            "observability.get_api_latency",
+            fake_db, "observability.get_api_latency",
             {"time_range": "24h"},
             tool_context,
         )
@@ -264,7 +278,7 @@ async def test_endpoint_prefix_filter(
     with patch("app.security.rate_limit.get_redis_client") as mock_get:
         mock_get.return_value = _make_redis_mock(org_id, SAMPLE_METRICS)
         result = await registry.execute(
-            "observability.get_api_latency",
+            fake_db, "observability.get_api_latency",
             {"time_range": "24h", "endpoint_prefix": "/api/v1/conversations"},
             tool_context,
         )
@@ -290,7 +304,7 @@ async def test_no_data_returns_friendly_message(
         mock_get.return_value = redis_mock
 
         result = await registry.execute(
-            "observability.get_api_latency",
+            fake_db, "observability.get_api_latency",
             {"time_range": "24h"},
             tool_context,
         )
@@ -431,7 +445,7 @@ async def test_redis_failure_returns_failed_result(
     with patch("app.security.rate_limit.get_redis_client") as mock_get:
         mock_get.side_effect = ConnectionError("Redis is unavailable")
         result = await registry.execute(
-            "observability.get_api_latency",
+            fake_db, "observability.get_api_latency",
             {"time_range": "24h"},
             tool_context,
         )

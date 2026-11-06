@@ -24,7 +24,7 @@ async def test_tenant_isolation_api(client: AsyncClient, db_session: AsyncSessio
         email="hacker@evil.com",
         full_name="Evil User",
         is_active=True,
-        is_superuser=False,
+
         metadata_={}
     )
     db_session.add_all([org2, user2])
@@ -40,7 +40,7 @@ async def test_tenant_isolation_api(client: AsyncClient, db_session: AsyncSessio
     # Let's mock a request to an org-scoped endpoint if it existed
     # For now, just ensure the headers spoofing on the MCP route fails
     response = await client.get(
-        "/api/v1/mcp",
+        "/api/v1/mcp/sse",
         headers={"X-Organization-Id": str(org2.id)}
     )
     # The client fixture uses user token, token has org1. Header is org2.
@@ -52,7 +52,7 @@ async def test_tenant_isolation_api(client: AsyncClient, db_session: AsyncSessio
 async def test_mcp_auth_missing(app):
     """Test that MCP endpoint rejects unauthenticated requests."""
     from httpx import ASGITransport
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as unauth_client:
-        response = await unauth_client.get("/api/v1/mcp")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as unauth_client:
+        response = await unauth_client.get("/api/v1/mcp/sse")
         assert response.status_code == 401
         assert b"Unauthorized" in response.content

@@ -11,12 +11,12 @@ except ImportError:
 
 from app.ai.errors.exceptions import (
     LLMAuthenticationError,
+    LLMContentBlockedError,
     LLMProviderError,
     LLMQuotaExceededError,
     LLMRateLimitError,
     LLMTimeoutError,
     LLMValidationError,
-    LLMContentBlockedError,
 )
 from app.ai.providers.base import LLMProvider
 from app.ai.schemas.generation import GenerationRequest, GenerationResult
@@ -133,7 +133,7 @@ class GeminiProvider(LLMProvider):
 
         if not response.candidates:
             raise LLMProviderError("No response candidates returned by Gemini.")
-            
+
         finish_reason = response.candidates[0].finish_reason
         if finish_reason and str(finish_reason).upper() == "SAFETY":
             raise LLMContentBlockedError("Gemini blocked response due to safety filters.")
@@ -198,7 +198,7 @@ class GeminiProvider(LLMProvider):
 
         if not response.candidates:
             raise LLMProviderError("No response candidates returned by Gemini.")
-            
+
         finish_reason = response.candidates[0].finish_reason
         if finish_reason and str(finish_reason).upper() == "SAFETY":
             raise LLMContentBlockedError("Gemini blocked response due to safety filters.")

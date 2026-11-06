@@ -39,6 +39,7 @@ class MCPToolExecutor(BaseToolExecutor):
             if text.startswith("Error:"):
                 return ToolResult(status="failed", message=text, retryable=False)
 
+            print('MCP TEXT:', text)
             data = json.loads(text)
             return ToolResult(status="succeeded", result=data)
         except Exception as e:
@@ -144,3 +145,4 @@ class MCPClientManager:
         await self.exit_stack.aclose()
         self.sessions.clear()
         self.tool_cache.clear()
+

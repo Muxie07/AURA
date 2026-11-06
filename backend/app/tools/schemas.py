@@ -33,7 +33,7 @@ class ToolDefinition(BaseModel):
 
 class ToolContext(BaseModel):
     organization_id: uuid.UUID
-    agent_run_id: uuid.UUID
+    agent_run_id: uuid.UUID | None = None
     execution_id: str
     dry_run: bool = False
     idempotency_key: str | None = None
@@ -55,6 +55,6 @@ class ToolExecutionLifecycleEvent(BaseModel):
     tool_name: str
     status: str
     organization_id: uuid.UUID
-    agent_run_id: uuid.UUID
+    agent_run_id: uuid.UUID | None = None
     started_at: str
     duration_ms: int

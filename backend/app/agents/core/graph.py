@@ -102,7 +102,7 @@ class WorkflowGraph:
                 logger.error("graph_node_timeout", state=current_status)
                 state.add_error(
                     category=FailureCategory.TIMEOUT,
-                    message=f"Node {current_node.name} execution timed out after 30s.",
+                    message="AURA couldn't complete that request right now. Please try again.",
                 )
                 state.status = AgentNodeState.TIMEOUT
                 break

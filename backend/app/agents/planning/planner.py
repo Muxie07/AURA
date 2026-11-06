@@ -70,9 +70,34 @@ class UnderstandNode(BaseNode):
             state.normalized_request = understanding.normalized_request
 
             if understanding.requires_clarification:
-                state.final_response = (
-                    understanding.clarification_question or "Could you please clarify your request?"
-                )
+                req_lower = state.original_request.lower()
+                from app.agents.execution.decision import INVOICE_SELECTOR_PAYLOAD, QUOTATION_SELECTOR_PAYLOAD
+                if any(w in req_lower for w in ["invoice", "bill", "tax invoice"]):
+                    state.final_response = (
+                        "I can help you generate an official Tax Invoice based on the **Cloud Infotech Distribution Price List**.\n\n"
+                        "Please select the target company, hardware model, and pricing tier below:\n\n"
+                        + INVOICE_SELECTOR_PAYLOAD
+                    )
+                elif any(w in req_lower for w in ["quotation", "quote"]):
+                    state.final_response = (
+                        "I can help you create an official commercial Quotation based on our hardware catalog and rate card.\n\n"
+                        "Please select the product from our catalog and enter client company details below:\n\n"
+                        + QUOTATION_SELECTOR_PAYLOAD
+                    )
+                else:
+                    state.final_response = (
+                        understanding.clarification_question or "Could you please clarify your request?"
+                    )
+
+                try:
+                    import redis.asyncio as aioredis
+                    from app.config.settings import get_settings
+                    r_client = aioredis.from_url(get_settings().redis_url, socket_timeout=2.0)
+                    await r_client.publish(f"run_stream_{state.run_id}", state.final_response)
+                    await r_client.aclose()
+                except Exception:
+                    pass
+
                 state.status = AgentNodeState.COMPLETED
                 return state
 

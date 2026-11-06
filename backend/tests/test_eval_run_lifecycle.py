@@ -22,9 +22,9 @@ from app.database.models import (
 
 @pytest.mark.asyncio
 async def test_run_lifecycle_persists_failures_and_continues_without_cloud_llm(
-    app, sqlite_engine, create_tables, monkeypatch
+    app, postgres_engine, create_tables, monkeypatch
 ):
-    factory = async_sessionmaker(bind=sqlite_engine, expire_on_commit=False, autoflush=False)
+    factory = async_sessionmaker(bind=postgres_engine, expire_on_commit=False, autoflush=False)
     monkeypatch.setattr("app.database.base.get_session_factory", lambda: factory)
 
     async def use_test_session():
@@ -35,8 +35,8 @@ async def test_run_lifecycle_persists_failures_and_continues_without_cloud_llm(
     org_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
     user_id = uuid.UUID("00000000-0000-0000-0000-000000000002")
     async with factory() as db:
-        db.add(Organization(id=org_id, name="Test", slug="eval-test", settings={}))
-        db.add(
+        await db.merge(Organization(id=org_id, name="Test", slug="eval-test", settings={}))
+        await db.merge(
             User(
                 id=user_id,
                 organization_id=org_id,
@@ -46,6 +46,7 @@ async def test_run_lifecycle_persists_failures_and_continues_without_cloud_llm(
                 metadata_={},
             )
         )
+        await db.flush()
         dataset = EvalDataset(
             organization_id=org_id, name="Lifecycle test", category="test", version=1
         )
@@ -101,13 +102,13 @@ async def test_run_lifecycle_persists_failures_and_continues_without_cloud_llm(
     from jose import jwt
 
     token = jwt.encode(
-        {"sub": str(user_id), "org_id": str(org_id), "exp": 9999999999},
+        {"sub": str(user_id), "org_id": str(org_id), "exp": 9999999999, "iss": "aura", "aud": "aura"},
         "test-secret-key-at-least-32-characters-long",
         algorithm="HS256",
     )
     headers = {"Authorization": f"Bearer {token}"}
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test", headers=headers
+        transport=ASGITransport(app=app), base_url="http://testserver", headers=headers
     ) as client:
         settings = await client.get("/api/v1/settings")
         assert settings.status_code == 200

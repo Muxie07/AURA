@@ -254,24 +254,57 @@ class LLMService:
             log.error("llm_structured_generation_failed", error=str(e), error_type=type(e).__name__)
             raise
 
-    @retry(
-        retry=retry_if_exception_type((LLMTimeoutError, LLMRateLimitError)),
-        stop=stop_after_attempt(3),
-        wait=wait_exponential_jitter(initial=1, max=60),
-        reraise=True,
-    )
     async def stream(self, request: GenerationRequest) -> AsyncGenerator[str, None]:
-        """Stream text generation."""
+        """Stream text generation with fallback support."""
         log = logger.bind(model=request.model, provider=self.provider.name, task="stream")
         log.debug("starting_llm_stream")
 
+        fallback_used = False
+        stream_generator = None
+
         try:
-            async for chunk in self.provider.stream(request):
-                yield chunk
+            stream_generator = self.provider.stream(request)
+            first_chunk = await stream_generator.__anext__()
+            yield first_chunk
+        except StopAsyncIteration:
             log.info("llm_stream_success")
+            return
         except Exception as e:
-            log.error("llm_stream_failed", error=str(e))
-            raise
+            log.warning("llm_stream_primary_failed", error=str(e), error_type=type(e).__name__)
+            fallback_used = True
+            primary_error = e
+
+        if not fallback_used and stream_generator:
+            try:
+                async for chunk in stream_generator:
+                    yield chunk
+                log.info("llm_stream_success")
+                return
+            except Exception as e:
+                log.error("llm_stream_failed_midstream", error=str(e))
+                raise e
+
+        if fallback_used:
+            log.warning("DEBUG_FALLBACK_STATE", provider=str(self.fallback_provider), model=str(self.settings.fallback_llm_model))
+            if self.fallback_provider and self.settings.fallback_llm_model:
+                log.info(
+                    "llm_stream_using_fallback_provider",
+                    provider=self.fallback_provider.name,
+                    model=self.settings.fallback_llm_model,
+                )
+                try:
+                    fallback_request = request.model_copy(
+                        update={"model": self.settings.fallback_llm_model}
+                    )
+                    async for chunk in self.fallback_provider.stream(fallback_request):
+                        yield chunk
+                    log.info("llm_stream_fallback_success")
+                    return
+                except Exception as fb_e:
+                    log.error("llm_stream_fallback_provider_failed", error=str(fb_e))
+                    raise primary_error from fb_e
+            else:
+                raise primary_error
 
     async def generate_simple(self, prompt: str, system_prompt: str | None = None) -> str:
         """Helper for simple one-off generation tasks."""

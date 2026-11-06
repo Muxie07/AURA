@@ -88,13 +88,13 @@ class DocumentIngestionService:
             # Pure python magic byte check for PDF and Office files
             header = file_content[:4]
             if header.startswith(b'%PDF'):
-                mime_group = "pdf"
+                _mime_group = "pdf"
             elif header.startswith(b'PK\x03\x04'):
-                mime_group = "office/docx"
+                _mime_group = "office/docx"
             elif header.startswith(b'\xd0\xcf\x11\xe0'):
-                mime_group = "office/legacy"
+                _mime_group = "office/legacy"
             elif all(b < 128 for b in header):
-                mime_group = "text"
+                _mime_group = "text"
             else:
                 raise ValueError(f"Invalid or unsupported file type, header: {header}")
 

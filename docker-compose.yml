@@ -109,10 +109,10 @@ services:
       MCP_SERVER_URL: http://mcp-server:8000/api/v1/mcp/messages
       PRIMARY_LLM_PROVIDER: google
       FALLBACK_LLM_PROVIDER: heuristic
-      PRIMARY_LLM_MODEL: gemini-3.5-flash
+      PRIMARY_LLM_MODEL: gemini-3.8-flash
       FALLBACK_LLM_MODEL: heuristic-fallback
-      FAST_MODEL: gemini-3.5-flash
-      REASONING_MODEL: gemini-3.5-flash
+      FAST_MODEL: gemini-3.8-flash
+      REASONING_MODEL: gemini-3.8-flash
     # Not exposed directly to host to enforce internal boundary
     expose:
       - "8000"
@@ -125,7 +125,7 @@ services:
       db-migration:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/ready"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -155,10 +155,10 @@ services:
       MCP_SERVER_URL: http://mcp-server:8000/api/v1/mcp/messages
       PRIMARY_LLM_PROVIDER: google
       FALLBACK_LLM_PROVIDER: heuristic
-      PRIMARY_LLM_MODEL: gemini-3.5-flash
+      PRIMARY_LLM_MODEL: gemini-3.8-flash
       FALLBACK_LLM_MODEL: heuristic-fallback
-      FAST_MODEL: gemini-3.5-flash
-      REASONING_MODEL: gemini-3.5-flash
+      FAST_MODEL: gemini-3.8-flash
+      REASONING_MODEL: gemini-3.8-flash
     ports:
       - "${AURA_API_PORT:-8000}:8000"
     volumes:
@@ -178,6 +178,45 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    networks:
+      - aura-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: aura-worker
+    restart: unless-stopped
+    command: arq app.worker.WorkerSettings
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      AURA_ENV: development
+      MCP_SERVER_URL: http://mcp-server:8000/api/v1/mcp/messages
+      PRIMARY_LLM_PROVIDER: google
+      FALLBACK_LLM_PROVIDER: heuristic
+      PRIMARY_LLM_MODEL: gemini-3.8-flash
+      FALLBACK_LLM_MODEL: heuristic-fallback
+      FAST_MODEL: gemini-3.8-flash
+      REASONING_MODEL: gemini-3.8-flash
+    volumes:
+      - ./backend:/app
+      - /app/.venv
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      db-migration:
+        condition: service_completed_successfully
     networks:
       - aura-network
     logging:

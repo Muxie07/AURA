@@ -44,7 +44,7 @@ async def document(db_session: AsyncSession, organization, knowledge_base) -> Do
 
 class DummyProvider:
     async def embed(self, texts, model=None):
-        return [[0.1] * 1536 for _ in texts]
+        return [[0.1] * 768 for _ in texts]
 
     async def generate_simple(self, prompt, system_prompt):
         return prompt + " expanded"

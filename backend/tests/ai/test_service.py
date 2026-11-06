@@ -27,12 +27,12 @@ async def test_llm_service_budget_enforcement(monkeypatch: Any) -> None:
     get_settings.cache_clear()
 
     org_id = uuid.uuid4()
-    CostManager.reset_daily_spend(org_id)
+    await CostManager.reset_daily_spend(org_id)
 
     service = LLMService()
 
     # Very long prompt to trigger budget exceeded
-    messages = [Message(role="user", content="A" * 10000000)]
+    messages = [Message(role="user", content="A" * 30000000)]
     request = GenerationRequest(messages=messages, model="gpt-4-turbo", organization_id=org_id)
 
     with pytest.raises(Exception, match="Budget exceeded"):
@@ -45,7 +45,7 @@ async def test_llm_service_fallback(monkeypatch: Any) -> None:
     get_settings.cache_clear()
 
     org_id = uuid.uuid4()
-    CostManager.reset_daily_spend(org_id)
+    await CostManager.reset_daily_spend(org_id)
 
     service = LLMService()
 

@@ -33,7 +33,10 @@ async def auth_middleware(app, scope, receive, send):
     settings = get_settings()
     try:
         payload = jwt.decode(
-            token, settings.aura_secret_key.get_secret_value(), algorithms=["HS256"]
+            token,
+            settings.aura_secret_key.get_secret_value(),
+            algorithms=["HS256"],
+            options={"verify_aud": False, "verify_iss": False},
         )
         if "org_id" not in payload:
             return await send_error(401, b"Invalid token claims")

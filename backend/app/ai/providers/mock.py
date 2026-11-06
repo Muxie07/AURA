@@ -103,4 +103,4 @@ class MockLLMProvider(LLMProvider):
 
     async def embed(self, texts: list[str], model: str) -> list[list[float]]:  # noqa: ARG002
         # Return a deterministic 1536-dimensional vector for each text
-        return [[0.1] * 1536 for _ in texts]
+        return [[0.1] * 768 for _ in texts]

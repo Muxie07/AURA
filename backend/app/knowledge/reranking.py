@@ -16,11 +16,27 @@ class Reranker(ABC):
 
 class FallbackReranker(Reranker):
     """
-    Deterministic fallback reranker (identity pass-through).
+    Deterministic fallback reranker based on lexical keyword overlap and retriever score.
     """
 
     async def rerank(self, query: str, candidates: list[RetrievalResult]) -> list[RetrievalResult]:
-        _ = query
+        import re
+
+        stopwords = {
+            "a", "an", "the", "in", "on", "of", "for", "to", "and", "or", "our", "my",
+            "your", "find", "summarize", "tell", "me", "what", "is", "how", "handling",
+            "handle", "procedure", "please", "we", "can", "you", "recent", "about"
+        }
+        query_words = [
+            w for w in re.findall(r"[a-zA-Z0-9]+", query.lower())
+            if w not in stopwords and len(w) > 1
+        ]
+        if query_words:
+            for c in candidates:
+                haystack = (c.content + " " + c.source).lower()
+                matches = sum(1 for w in query_words if w in haystack)
+                c.score += matches * 2.0
+
         return sorted(candidates, key=lambda x: x.score, reverse=True)
 
 

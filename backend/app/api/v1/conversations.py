@@ -59,7 +59,7 @@ async def create_conversation(
     message_count = 0
     if body.initial_message:
         message = Message(
-            conversation_id=conversation.id, role=MessageRole.USER, content=body.initial_message
+            organization_id=current_user.organization_id, conversation_id=conversation.id, role=MessageRole.USER, content=body.initial_message
         )
         db.add(message)
         message_count = 1
@@ -334,6 +334,7 @@ async def add_message(
         raise NotFoundError("Conversation", str(conversation_id))
 
     message = Message(
+        organization_id=current_user.organization_id,
         conversation_id=conversation_id,
         role=body.role,
         content=body.content,

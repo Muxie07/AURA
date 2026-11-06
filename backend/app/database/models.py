@@ -88,8 +88,10 @@ class AgentRunStatus(StrEnum):
 
     PENDING = "pending"
     RUNNING = "running"
+    AWAITING_APPROVAL = "awaiting_approval"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELED = "canceled"
 
 
 class UserRole(StrEnum):
@@ -890,8 +892,8 @@ class ToolExecutionAudit(TimestampMixin, Base):
     organization_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("organizations.id", ondelete="CASCADE"), index=True
     )
-    agent_run_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True
+    agent_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True, nullable=True
     )
     execution_id: Mapped[str] = mapped_column(String(100), index=True)
     tool_name: Mapped[str] = mapped_column(String(255), index=True)
@@ -1139,7 +1141,7 @@ class Quotation(TimestampMixin, Base):
     )
     code: Mapped[str] = mapped_column(String(50), index=True)
 
-    total: Mapped[float] = mapped_column(sa.Numeric(14, 2), default=0.0)
+    total: Mapped[str] = mapped_column(String(50), default="0.00")
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     status: Mapped[str] = mapped_column(String(50))
     version: Mapped[int] = mapped_column(Integer, default=1)

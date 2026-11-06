@@ -10,7 +10,6 @@ from app.tools.registry import ToolRegistry
 from app.tools.schemas import ToolContext
 
 logger = structlog.get_logger(__name__)
-UTC = UTC
 
 
 class FailureNode(BaseNode):

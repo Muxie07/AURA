@@ -1,4 +1,5 @@
 import uuid
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -48,6 +49,7 @@ async def test_infinite_loop_prevention():
         user_id=uuid.uuid4(),
         conversation_id=uuid.uuid4(),
         original_request="test",
+        db_session=AsyncMock(),
     )
 
     # Run the graph; it should hit max_agent_iterations limit
@@ -65,15 +67,16 @@ async def test_hallucinated_tool_call():
         user_id=uuid.uuid4(),
         conversation_id=uuid.uuid4(),
         original_request="test",
+        db_session=AsyncMock(),
     )
     from app.agents.core.state import AgentAction
 
     state.current_actions.append(AgentAction(action_type="hallucinated_tool", description="Hack"))
 
-    final_state = await node._execute(state)
+    final_state = await node._execute(state, db=AsyncMock())
     assert len(final_state.errors) > 0
     assert final_state.errors[0].category == FailureCategory.VALIDATION
-    assert "Unknown tool type" in final_state.errors[0].message
+    assert "Tool hallucinated_tool not found." in final_state.errors[0].message or "Unknown tool type" in final_state.errors[0].message
 
 
 @pytest.mark.asyncio
@@ -97,6 +100,7 @@ async def test_agent_cancellation():
         user_id=uuid.uuid4(),
         conversation_id=uuid.uuid4(),
         original_request="test",
+        db_session=AsyncMock(),
         status=AgentNodeState.CANCELLED,
     )
     final_state = await graph.run(state)

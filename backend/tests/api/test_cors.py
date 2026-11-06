@@ -1,6 +1,7 @@
 import pytest
 from httpx import AsyncClient
 
+
 @pytest.mark.asyncio
 async def test_cors_preflight_allowed(client: AsyncClient):
     response = await client.options(

@@ -149,12 +149,14 @@ async def create_agent_run(
 
     # Create user message
     user_msg = Message(
+        organization_id=org_id,
         conversation_id=req.conversation_id, role=MessageRole.USER, content=req.request
     )
     db.add(user_msg)
 
     # Create run
     run = AgentRun(
+        organization_id=org_id,
         conversation_id=req.conversation_id,
         user_id=user_id,
         user_request=req.request,

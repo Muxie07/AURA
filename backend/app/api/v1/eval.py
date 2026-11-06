@@ -449,6 +449,7 @@ async def execute_eval_run_background(eval_run_id: uuid.UUID, user_id: uuid.UUID
                         session.add(conv)
                         await session.flush()
                         agent_run = AgentRun(
+                            organization_id=org_id,
                             conversation_id=conv.id,
                             user_id=user_id,
                             user_request=example.input_prompt,
@@ -458,6 +459,7 @@ async def execute_eval_run_background(eval_run_id: uuid.UUID, user_id: uuid.UUID
                         await session.flush()
                         session.add(
                             Message(
+                                organization_id=org_id,
                                 conversation_id=conv.id,
                                 role=MessageRole.USER,
                                 content=example.input_prompt,

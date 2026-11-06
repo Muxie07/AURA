@@ -21,8 +21,14 @@ export async function fetchApi(endpoint: string, options: RequestInit = {}): Pro
 
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+  const isServer = typeof window === 'undefined';
+  let API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
   
-
+  if (isServer && API_URL.startsWith('/')) {
+    // During Server-Side Rendering (SSR), relative URLs fail in Node.js fetch()
+    // We must route it directly to the backend container within the Docker network
+    API_URL = 'http://backend:8000' + API_URL;
+  }
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string> || {}),
