@@ -1522,24 +1522,6 @@ export default function ConversationsPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    loadConversations();
-  }, []);
-
-  useEffect(() => {
-    if (activeId) {
-      loadMessages(activeId);
-      setStreamContent('');
-      setPendingApproval(null);
-    } else {
-      setMessages([]);
-    }
-  }, [activeId]);
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, streamContent, isLoading, pendingApproval]);
-
   const scrollToBottom = () => {
     if (messagesContainerRef.current) {
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
@@ -1570,6 +1552,24 @@ export default function ConversationsPage() {
     }
   };
 
+  useEffect(() => {
+    loadConversations();
+  }, []);
+
+  useEffect(() => {
+    if (activeId) {
+      loadMessages(activeId);
+      setStreamContent('');
+      setPendingApproval(null);
+    } else {
+      setMessages([]);
+    }
+  }, [activeId]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, streamContent, isLoading, pendingApproval]);
+
   const handleSend = async (forcedText?: string) => {
     const text = forcedText || input;
     if (!text.trim()) return;
@@ -1580,7 +1580,7 @@ export default function ConversationsPage() {
     setPendingApproval(null);
 
     // Optimistic UI for user message
-    const tempMsg: Message = { id: Date.now().toString(), role: 'user', content: text };
+    const tempMsg: Message = { id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'msg-temp', role: 'user', content: text };
     setMessages((prev) => [...prev, tempMsg]);
 
     let convId = activeId;
