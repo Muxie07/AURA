@@ -150,3 +150,27 @@ backend/migrations/__pycache__/
 # OAuth / Gmail credentials file
 config/gmail_credentials.json
 backend/config/gmail_credentials.json
+
+# Portfolio cleanup: local scratch/debug scripts and secrets, never committed
+token.txt
+auth.json
+conv.json
+app_old/
+scratch/
+fix_*.py
+patch_*.py
+add_*.py
+update_*.py
+phase*.txt
+backend/fix*.py
+backend/patch*.py
+backend/debug_eval.py
+backend/mock_mcp_server.py
+backend/generate_tests.py
+backend/update_models.py
+backend/requirements*.backup.txt
+backend/requirements.txt.backup
+backend/security_findings.md
+backend/pytest_error.log
+backend/ruff_all.txt
+backend/ruff_errors.json
