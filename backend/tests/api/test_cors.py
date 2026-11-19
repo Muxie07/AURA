@@ -30,10 +30,10 @@ async def test_cors_preflight_disallowed(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_cors_error_response_has_headers(client: AsyncClient):
-    # This should return a 413 because it's too large, or we can just send an unauthorized request
+    # Error responses (here: 401 from an invalid token) must still carry CORS headers.
     response = await client.get(
         "/api/v1/runs",
-        headers={"Origin": "http://localhost:3000"}
+        headers={"Origin": "http://localhost:3000", "Authorization": "Bearer not-a-valid-token"}
     )
     assert response.status_code == 401
     assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"

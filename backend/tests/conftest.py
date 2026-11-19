@@ -121,7 +121,7 @@ async def db_session(postgres_engine, create_tables):
 
 
 @pytest_asyncio.fixture
-async def app(db_session: AsyncSession) -> FastAPI:
+async def app(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     """
     Returns a configured FastAPI test application with mocked dependencies.
 
@@ -146,9 +146,10 @@ async def app(db_session: AsyncSession) -> FastAPI:
     import app.security.rate_limit
     import app.tools.mcp.routes
 
-    app.config.settings.get_settings = mock_get_settings
-    app.tools.mcp.routes.get_settings = mock_get_settings
-    app.security.rate_limit.get_settings = mock_get_settings
+    # monkeypatch so the patches are undone after each test (no cross-test leakage)
+    monkeypatch.setattr(app.config.settings, "get_settings", mock_get_settings)
+    monkeypatch.setattr(app.tools.mcp.routes, "get_settings", mock_get_settings)
+    monkeypatch.setattr(app.security.rate_limit, "get_settings", mock_get_settings)
 
     from app.main import create_app
 
@@ -172,14 +173,17 @@ async def app(db_session: AsyncSession) -> FastAPI:
 
     mock_factory = MagicMock()
     mock_factory.return_value = db_session
-    db_base.get_session_factory = lambda: lambda: db_session
+    monkeypatch.setattr(db_base, "get_session_factory", lambda: lambda: db_session)
 
     return test_app
 
 
 @pytest_asyncio.fixture
-async def client(app: FastAPI) -> AsyncGenerator[AsyncClient, None]:
-    """Async HTTP test client."""
+async def client(app: FastAPI, user: User) -> AsyncGenerator[AsyncClient, None]:
+    """Async HTTP test client authenticated as the default test user.
+
+    Depends on ``user`` because auth resolves the JWT ``sub`` against the DB.
+    """
     from jose import jwt
 
     token = jwt.encode(
