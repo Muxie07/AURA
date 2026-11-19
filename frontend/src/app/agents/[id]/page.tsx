@@ -227,7 +227,7 @@ export default function AgentRunDetail() {
                   {activeTab === 'trace' && (
                       <ul className="divide-y divide-gray-200">
                         {events.map((event, idx) => (
-                          <li key={idx} className="bg-white">
+                          <li key={event.id || `${event.sequence ?? ''}-${event.timestamp}-${event.event_type}-${idx}`} className="bg-white">
                             <div 
                               className="px-4 py-3 flex items-start gap-3 hover:bg-gray-50 cursor-pointer"
                               onClick={() => setExpandedEvent(expandedEvent === String(idx) ? null : String(idx))}
@@ -262,7 +262,7 @@ export default function AgentRunDetail() {
                         <div className="absolute left-9 top-0 bottom-0 w-0.5 bg-gray-200"></div>
                         <ul className="space-y-6 relative">
                             {events.map((event, idx) => (
-                                <li key={idx} className="flex gap-4 items-start">
+                                <li key={event.id || `${event.sequence ?? ''}-${event.timestamp}-${event.event_type}-${idx}`} className="flex gap-4 items-start">
                                     <div className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 border-4 border-white flex items-center justify-center z-10 shadow-sm">
                                         <div className="w-2 h-2 rounded-full bg-blue-600"></div>
                                     </div>
@@ -294,7 +294,7 @@ export default function AgentRunDetail() {
                               </thead>
                               <tbody className="bg-white divide-y divide-gray-200 text-sm">
                                   {events.map((event, idx) => (
-                                      <tr key={idx} className="hover:bg-gray-50">
+                                      <tr key={event.id || `${event.sequence ?? ''}-${event.timestamp}-${event.event_type}-${idx}`} className="hover:bg-gray-50">
                                           <td className="px-4 py-2 whitespace-nowrap text-gray-500 font-mono text-xs">{new Date(event.timestamp).toISOString()}</td>
                                           <td className="px-4 py-2 whitespace-nowrap font-medium text-gray-900">{event.event_type}</td>
                                           <td className="px-4 py-2 whitespace-nowrap text-gray-600">{event.component}</td>

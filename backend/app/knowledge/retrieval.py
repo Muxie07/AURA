@@ -51,12 +51,43 @@ class Retriever:
             query_vector = "[0.0]"  # Dummy vector
 
         import re
+
         stopwords = {
-            "a", "an", "the", "in", "on", "of", "for", "to", "and", "or", "our", "my",
-            "your", "find", "summarize", "tell", "me", "what", "is", "how", "handling",
-            "handle", "procedure", "please", "we", "can", "you", "recent", "about"
+            "a",
+            "an",
+            "the",
+            "in",
+            "on",
+            "of",
+            "for",
+            "to",
+            "and",
+            "or",
+            "our",
+            "my",
+            "your",
+            "find",
+            "summarize",
+            "tell",
+            "me",
+            "what",
+            "is",
+            "how",
+            "handling",
+            "handle",
+            "procedure",
+            "please",
+            "we",
+            "can",
+            "you",
+            "recent",
+            "about",
         }
-        words = [w for w in re.findall(r"[a-zA-Z0-9]+", query.lower()) if w not in stopwords and len(w) > 1]
+        words = [
+            w
+            for w in re.findall(r"[a-zA-Z0-9]+", query.lower())
+            if w not in stopwords and len(w) > 1
+        ]
         kw_or = " | ".join(words) if words else query
 
         kb_clause = "AND d.knowledge_base_id = :kb_id" if knowledge_base_id else ""

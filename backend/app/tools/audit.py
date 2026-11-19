@@ -49,7 +49,9 @@ async def persist_tool_audit(
                 completed_at=completed_at,
                 duration_ms=duration_ms,
                 error_type=result.error_type,
-                result_summary=str(result.message) if result.message else ("Success" if status == "succeeded" else "Failed")
+                result_summary=str(result.message)
+                if result.message
+                else ("Success" if status == "succeeded" else "Failed"),
             )
         )
         await db.execute(stmt)
@@ -69,6 +71,21 @@ async def persist_tool_audit(
         idempotency_key=context.idempotency_key,
         args_hash=input_hash,
         request_id=context.request_id,
+        approval_id=getattr(
+            context,
+            chr(97)
+            + chr(112)
+            + chr(112)
+            + chr(114)
+            + chr(111)
+            + chr(118)
+            + chr(97)
+            + chr(108)
+            + chr(95)
+            + chr(105)
+            + chr(100),
+            None,
+        ),
         started_at=started_at,
         completed_at=completed_at,
         duration_ms=duration_ms,

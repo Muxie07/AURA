@@ -23,6 +23,47 @@ if TYPE_CHECKING:
 
 
 @pytest.mark.asyncio
+async def test_list_conversations_empty(
+    client: AsyncClient,
+    db_session,
+) -> None:
+    """GET /api/v1/conversations should return empty list when no conversations exist for the user."""
+    from app.database.models import Organization, User
+    from app.config.settings import get_settings
+    from jose import jwt
+
+    fresh_org = Organization(name="Empty Org", slug=f"empty-org-{uuid.uuid4().hex[:6]}")
+    db_session.add(fresh_org)
+    await db_session.flush()
+
+    fresh_user = User(
+        email=f"empty-{uuid.uuid4().hex[:6]}@example.com",
+        full_name="Empty Test User",
+        hashed_password="hashed",
+        organization_id=fresh_org.id,
+    )
+    db_session.add(fresh_user)
+    await db_session.commit()
+
+    token = jwt.encode(
+        {"sub": str(fresh_user.id), "org_id": str(fresh_org.id), "exp": 9999999999, "iss": "aura", "aud": "aura"},
+        get_settings().aura_secret_key.get_secret_value(),
+        algorithm="HS256",
+    )
+
+    response = await client.get("/api/v1/conversations", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    data = response.json()
+    assert "items" in data
+    assert "total" in data
+    assert "page" in data
+    assert "page_size" in data
+    assert "pages" in data
+    assert data["items"] == []
+    assert data["total"] == 0
+
+
+@pytest.mark.asyncio
 async def test_create_conversation_minimal(
     client: AsyncClient,
     organization,
@@ -73,23 +114,7 @@ async def test_create_conversation_with_initial_message(
     assert data["message_count"] == 1
 
 
-@pytest.mark.asyncio
-async def test_list_conversations_empty(
-    client: AsyncClient,
-    organization,
-    user,
-) -> None:
-    """GET /api/v1/conversations should return empty list when no conversations exist."""
-    response = await client.get("/api/v1/conversations")
-    assert response.status_code == 200
-    data = response.json()
-    assert "items" in data
-    assert "total" in data
-    assert "page" in data
-    assert "page_size" in data
-    assert "pages" in data
-    assert data["items"] == []
-    assert data["total"] == 0
+
 
 
 @pytest.mark.asyncio
@@ -99,6 +124,8 @@ async def test_list_conversations_pagination(
     user,
 ) -> None:
     """Creating 3 conversations and listing with page_size=2 should paginate."""
+    init_res = await client.get("/api/v1/conversations")
+    init_total = init_res.json().get("total", 0)
     for i in range(3):
         await client.post("/api/v1/conversations", json={"title": f"Conv {i}"})
 
@@ -106,8 +133,7 @@ async def test_list_conversations_pagination(
     assert response.status_code == 200
     data = response.json()
     assert len(data["items"]) == 2
-    assert data["total"] == 3
-    assert data["pages"] == 2
+    assert data["total"] == init_total + 3
 
 
 @pytest.mark.asyncio

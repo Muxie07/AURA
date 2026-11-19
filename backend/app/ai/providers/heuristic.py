@@ -48,6 +48,7 @@ class HeuristicLLMProvider(LLMProvider):
         )
 
         from app.ai.knowledge.adaptive_engine import AdaptiveEngine
+
         adaptive_match = AdaptiveEngine.evaluate(prompt)
 
         # 1. First check if prompt matches adaptive general intelligence (time, holidays, climate, coding, etc.)
@@ -67,7 +68,26 @@ class HeuristicLLMProvider(LLMProvider):
             else:
                 text = "Tool execution completed successfully."
         # 3. If RAG context is provided with indexed chunks, only synthesize if prompt is asking for enterprise documentation
-        elif rag_match and rag_match.group(1).strip() and any(k in prompt for k in ["cloud infotech", "price list", "catalog", "hardware", "dinstar", "rate", "cost", "warranty", "sla", "incident", "p1"]):
+        elif (
+            rag_match
+            and rag_match.group(1).strip()
+            and any(
+                k in prompt
+                for k in [
+                    "cloud infotech",
+                    "price list",
+                    "catalog",
+                    "hardware",
+                    "dinstar",
+                    "rate",
+                    "cost",
+                    "warranty",
+                    "sla",
+                    "incident",
+                    "p1",
+                ]
+            )
+        ):
             raw_rag = rag_match.group(1).strip()
             doc_matches = re.findall(
                 r"<source>(.*?)</source>.*?<content>\s*(.*?)\s*</content>",
@@ -107,9 +127,7 @@ class HeuristicLLMProvider(LLMProvider):
         elif "pricing" in prompt:
             text = "I'm currently operating in offline fallback mode. I can help you calculate pricing."
         else:
-            text = (
-                "I am ready to assist you. You can ask for an official Quotation, Tax Invoice, Indian Government Holidays, Date & Time, Climate information, or Python coding."
-            )
+            text = "I am ready to assist you. You can ask for an official Quotation, Tax Invoice, Indian Government Holidays, Date & Time, Climate information, or Python coding."
 
         return GenerationResult(
             text=text,
@@ -140,7 +158,22 @@ class HeuristicLLMProvider(LLMProvider):
 
         if schema.__name__ == "StructuredAgentPlan":
             if "invoice" in user_prompt or "bill" in user_prompt:
-                if any(k in user_prompt for k in ["acme", "global", "nexa", "apex", "nova", "uc-", "dag", "sbc", "for ", "generate invoice for", "create invoice for"]):
+                if any(
+                    k in user_prompt
+                    for k in [
+                        "acme",
+                        "global",
+                        "nexa",
+                        "apex",
+                        "nova",
+                        "uc-",
+                        "dag",
+                        "sbc",
+                        "for ",
+                        "generate invoice for",
+                        "create invoice for",
+                    ]
+                ):
                     data = {
                         "goal": "Generate official tax invoice from Cloud Infotech price list",
                         "steps": [
@@ -160,7 +193,25 @@ class HeuristicLLMProvider(LLMProvider):
                 else:
                     data = {"goal": "Prompt user with invoice configuration options", "steps": []}
             elif "quotation" in user_prompt or "quote" in user_prompt:
-                if any(k in user_prompt for k in ["acme", "global", "nexa", "apex", "nova", "uc-", "dag", "sbc", "for ", "generate quotation for", "create quotation for", "units", "tier", "draft quotation for"]):
+                if any(
+                    k in user_prompt
+                    for k in [
+                        "acme",
+                        "global",
+                        "nexa",
+                        "apex",
+                        "nova",
+                        "uc-",
+                        "dag",
+                        "sbc",
+                        "for ",
+                        "generate quotation for",
+                        "create quotation for",
+                        "units",
+                        "tier",
+                        "draft quotation for",
+                    ]
+                ):
                     data = {
                         "goal": "Generate official commercial quotation from catalog",
                         "steps": [
@@ -230,7 +281,18 @@ class HeuristicLLMProvider(LLMProvider):
                         }
                     ],
                 }
-            elif any(k in user_prompt for k in ["policy", "support policy", "sla", "p1", "incident", "runbook", "procedure"]):
+            elif any(
+                k in user_prompt
+                for k in [
+                    "policy",
+                    "support policy",
+                    "sla",
+                    "p1",
+                    "incident",
+                    "runbook",
+                    "procedure",
+                ]
+            ):
                 data = {"goal": "Retrieve and summarize documentation", "steps": []}
             elif "customer" in user_prompt:
                 data = {
@@ -306,9 +368,22 @@ class HeuristicLLMProvider(LLMProvider):
                         req_line = user_prompt_dec.split("original user request:")[1].split("\n")[0]
 
                     cust_id_match = re.search(r'"id":\s*"([^"]+)"', user_prompt_dec)
-                    if cust_id_match and not any(k in req_line for k in ["acme", "global", "nexa", "apex", "nova", "cloud infotech", "for "]):
+                    if cust_id_match and not any(
+                        k in req_line
+                        for k in [
+                            "acme",
+                            "global",
+                            "nexa",
+                            "apex",
+                            "nova",
+                            "cloud infotech",
+                            "for ",
+                        ]
+                    ):
                         cust_id = cust_id_match.group(1)
-                        match_org = re.search(r"org_id[^a-z0-9]+([a-f0-9\-]{36})", sys_prompt + user_prompt_dec)
+                        match_org = re.search(
+                            r"org_id[^a-z0-9]+([a-f0-9\-]{36})", sys_prompt + user_prompt_dec
+                        )
                         prod_id = f"PROD-X-{match_org.group(1)[:8]}" if match_org else "PROD-X"
                         data["actions"].append(
                             {
@@ -343,10 +418,25 @@ class HeuristicLLMProvider(LLMProvider):
                             company = for_match.group(1).strip()
 
                         for mod_key in [
-                            "uc-2000-ve-2t", "uc-2000-ve-4t", "uc-2000-ve-8t", "uc-2000-vf-16t", "uc-2000-vg-32t",
-                            "dag1000-2s", "dag1000-4s", "dag1000-8s", "dag2000-16s", "dag2000-24s",
-                            "dag1000-4s4o", "dag1000-8s8o", "uc120", "uc200", "sbc300-10", "sbc300-20",
-                            "sbc1000-050", "sbc3000", "ent-db-001"
+                            "uc-2000-ve-2t",
+                            "uc-2000-ve-4t",
+                            "uc-2000-ve-8t",
+                            "uc-2000-vf-16t",
+                            "uc-2000-vg-32t",
+                            "dag1000-2s",
+                            "dag1000-4s",
+                            "dag1000-8s",
+                            "dag2000-16s",
+                            "dag2000-24s",
+                            "dag1000-4s4o",
+                            "dag1000-8s8o",
+                            "uc120",
+                            "uc200",
+                            "sbc300-10",
+                            "sbc300-20",
+                            "sbc1000-050",
+                            "sbc3000",
+                            "ent-db-001",
                         ]:
                             if mod_key in req_line:
                                 model = mod_key.upper()
@@ -361,7 +451,9 @@ class HeuristicLLMProvider(LLMProvider):
                         elif "end_customer" in req_line or "end customer" in req_line:
                             tier = "end_customer"
 
-                        qty_match = re.search(r'(?:qty|quantity)[:\s]+(\d+)|(\d+)\s*(?:units?|pcs?|nos?)', req_line)
+                        qty_match = re.search(
+                            r"(?:qty|quantity)[:\s]+(\d+)|(\d+)\s*(?:units?|pcs?|nos?)", req_line
+                        )
                         if qty_match:
                             qty = max(1, int(qty_match.group(1) or qty_match.group(2)))
 
@@ -400,10 +492,24 @@ class HeuristicLLMProvider(LLMProvider):
                             break
 
                     for mod_key in [
-                        "uc-2000-ve-2t", "uc-2000-ve-4t", "uc-2000-ve-8t", "uc-2000-vf-16t", "uc-2000-vg-32t",
-                        "dag1000-2s", "dag1000-4s", "dag1000-8s", "dag2000-16s", "dag2000-24s",
-                        "dag1000-4s4o", "dag1000-8s8o", "uc120", "uc200", "sbc300-10", "sbc300-20",
-                        "sbc1000-050", "sbc3000"
+                        "uc-2000-ve-2t",
+                        "uc-2000-ve-4t",
+                        "uc-2000-ve-8t",
+                        "uc-2000-vf-16t",
+                        "uc-2000-vg-32t",
+                        "dag1000-2s",
+                        "dag1000-4s",
+                        "dag1000-8s",
+                        "dag2000-16s",
+                        "dag2000-24s",
+                        "dag1000-4s4o",
+                        "dag1000-8s8o",
+                        "uc120",
+                        "uc200",
+                        "sbc300-10",
+                        "sbc300-20",
+                        "sbc1000-050",
+                        "sbc3000",
                     ]:
                         if mod_key in req_line:
                             model = mod_key.upper()
@@ -418,7 +524,9 @@ class HeuristicLLMProvider(LLMProvider):
                     elif "end_customer" in req_line or "end customer" in req_line:
                         tier = "end_customer"
 
-                    qty_match = re.search(r'(?:qty|quantity)[:\s]+(\d+)|(\d+)\s*(?:units?|pcs?|nos?)', req_line)
+                    qty_match = re.search(
+                        r"(?:qty|quantity)[:\s]+(\d+)|(\d+)\s*(?:units?|pcs?|nos?)", req_line
+                    )
                     if qty_match:
                         qty = max(1, int(qty_match.group(1) or qty_match.group(2)))
 

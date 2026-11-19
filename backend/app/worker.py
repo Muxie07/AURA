@@ -14,10 +14,12 @@ from app.tools.mcp.client import MCPClientManager
 
 logger = structlog.get_logger(__name__)
 
+
 async def startup(ctx):
     logger.info("Worker starting up")
     settings = get_settings()
     from app.database.base import initialize_database
+
     await initialize_database()
     ctx["session_factory"] = get_session_factory()
 
@@ -25,14 +27,17 @@ async def startup(ctx):
     ctx["llm"] = LLMService()
     ctx["settings"] = settings
 
+
 async def shutdown(ctx):
     logger.info("Worker shutting down")
     await ctx["mcp_manager"].close()
+
 
 async def run_agent(ctx, run_id_str: str):
     run_id = uuid.UUID(run_id_str)
 
     import structlog
+
     structlog.contextvars.clear_contextvars()
     trace_id = f"worker_{uuid.uuid4().hex[:12]}"
     structlog.contextvars.bind_contextvars(
@@ -46,7 +51,7 @@ async def run_agent(ctx, run_id_str: str):
 
     async with session_factory() as db:
         run = await db.scalar(
-            __import__('sqlalchemy').select(AgentRun).where(AgentRun.id == run_id)
+            __import__("sqlalchemy").select(AgentRun).where(AgentRun.id == run_id)
         )
         if not run:
             logger.error("AgentRun not found", run_id=str(run_id))
@@ -69,7 +74,7 @@ try:
     _settings = get_settings()
     _redis_url = _settings.redis_url
 except Exception:
-    _redis_url = 'redis://redis:6379/0'
+    _redis_url = "redis://redis:6379/0"
 
 
 class WorkerSettings:

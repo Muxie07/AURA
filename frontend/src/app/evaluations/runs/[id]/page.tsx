@@ -76,7 +76,7 @@ export default function RunDetailsPage() {
         {results.length === 0 ? <p className="p-4 text-sm text-gray-500">{active ? 'No example results persisted yet.' : 'This run has no persisted example results.'}</p> : (
           <ul className="divide-y divide-gray-200">
             {results.map((result, idx) => (
-              <li key={result.example_id} className="p-4 sm:px-6 hover:bg-gray-50">
+              <li key={result.example_id ? `${result.example_id}-${idx}` : String(idx)} className="p-4 sm:px-6 hover:bg-gray-50">
                 <div className="flex flex-col space-y-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-2">

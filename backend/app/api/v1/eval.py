@@ -283,9 +283,7 @@ async def log_incident(req: LogIncidentRequest, current_user: CurrentUserDep) ->
 
 
 @router.get("/incidents")
-async def get_incidents(
-    current_user: CurrentUserDep, limit: int = 50
-) -> dict[str, Any]:
+async def get_incidents(current_user: CurrentUserDep, limit: int = 50) -> dict[str, Any]:
     """Get tenant-isolated incident log."""
     incidents = IncidentLogger.get_org_incidents(current_user.organization_id, limit=limit)
     return {

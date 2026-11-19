@@ -39,7 +39,7 @@ class MCPToolExecutor(BaseToolExecutor):
             if text.startswith("Error:"):
                 return ToolResult(status="failed", message=text, retryable=False)
 
-            print('MCP TEXT:', text)
+            print("MCP TEXT:", text)
             data = json.loads(text)
             return ToolResult(status="succeeded", result=data)
         except Exception as e:
@@ -68,10 +68,11 @@ async def discover_mcp_tools(session: ClientSession) -> list[BaseToolExecutor]:
 
 class MCPClientManager:
     """Manages long-lived MCP connections per server/org."""
+
     def __init__(self):
         self.exit_stack = AsyncExitStack()
         self.sessions = {}  # key: (url, org_id), value: ClientSession
-        self.tool_cache = {} # key: (url, org_id), value: list[BaseToolExecutor]
+        self.tool_cache = {}  # key: (url, org_id), value: list[BaseToolExecutor]
 
     async def get_session(self, url: str, organization_id: str) -> ClientSession:
         key = (url, str(organization_id))
@@ -83,6 +84,7 @@ class MCPClientManager:
         import jwt
 
         from app.config.settings import get_settings
+
         settings = get_settings()
 
         payload = {
@@ -145,4 +147,3 @@ class MCPClientManager:
         await self.exit_stack.aclose()
         self.sessions.clear()
         self.tool_cache.clear()
-

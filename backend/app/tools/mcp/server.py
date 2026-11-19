@@ -57,6 +57,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     import time
 
     from app.security.rate_limit import get_redis_client
+
     redis = await get_redis_client()
     key = f"rate_limit:mcp_tool:{org_id}"
     now = time.time()
@@ -127,6 +128,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         return [TextContent(type="text", text=f"Error: REQUIRE_APPROVAL: {policy_decision.reason}")]
 
     from app.database.base import get_session_factory as _get_factory
+
     factory = _get_factory()
     async with factory() as session:
         result = await mcp_registry.execute(session, name, arguments, context)

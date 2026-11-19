@@ -112,10 +112,12 @@ async def ping() -> dict[str, str]:
     """Ultra-lightweight liveness probe. Does not check dependencies."""
     return {"status": "ok"}
 
+
 @router.get("/metrics", include_in_schema=False)
 async def metrics(settings: SettingsDep):
     """Prometheus-style metrics (stub)."""
     from app.security.rate_limit import get_redis_client
+
     redis = await get_redis_client()
     try:
         keys = await redis.keys("observability:metrics:*")
@@ -130,10 +132,12 @@ async def metrics(settings: SettingsDep):
             f"aura_http_requests_total {total_requests}",
             "# HELP aura_db_pool_size Size of the database connection pool",
             "# TYPE aura_db_pool_size gauge",
-            f"aura_db_pool_size {settings.aura_db_pool_size}"
+            f"aura_db_pool_size {settings.aura_db_pool_size}",
         ]
         from fastapi.responses import PlainTextResponse
+
         return PlainTextResponse("\n".join(output))
     except Exception as e:
         from fastapi.responses import PlainTextResponse
+
         return PlainTextResponse(f"error {e}", status_code=500)

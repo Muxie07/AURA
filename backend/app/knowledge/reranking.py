@@ -23,12 +23,39 @@ class FallbackReranker(Reranker):
         import re
 
         stopwords = {
-            "a", "an", "the", "in", "on", "of", "for", "to", "and", "or", "our", "my",
-            "your", "find", "summarize", "tell", "me", "what", "is", "how", "handling",
-            "handle", "procedure", "please", "we", "can", "you", "recent", "about"
+            "a",
+            "an",
+            "the",
+            "in",
+            "on",
+            "of",
+            "for",
+            "to",
+            "and",
+            "or",
+            "our",
+            "my",
+            "your",
+            "find",
+            "summarize",
+            "tell",
+            "me",
+            "what",
+            "is",
+            "how",
+            "handling",
+            "handle",
+            "procedure",
+            "please",
+            "we",
+            "can",
+            "you",
+            "recent",
+            "about",
         }
         query_words = [
-            w for w in re.findall(r"[a-zA-Z0-9]+", query.lower())
+            w
+            for w in re.findall(r"[a-zA-Z0-9]+", query.lower())
             if w not in stopwords and len(w) > 1
         ]
         if query_words:

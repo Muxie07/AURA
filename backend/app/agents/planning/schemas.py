@@ -26,13 +26,20 @@ class StructuredAgentPlan(BaseModel):
 
 
 class IntentUnderstanding(BaseModel):
-    intent: str = Field(..., description="The classified primary intent of the user (e.g. 'search_customer', 'create_quotation', 'general_query').")
-    entities: dict[str, Any] = Field(
-        default_factory=dict, description="Extracted entities from the request (e.g. {'customer_name': 'Acme', 'action': 'create_quotation'})."
+    intent: str = Field(
+        ...,
+        description="The classified primary intent of the user (e.g. 'search_customer', 'create_quotation', 'general_query').",
     )
-    confidence: float = Field(..., description="Confidence score from 0.0 to 1.0 of this understanding.")
+    entities: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Extracted entities from the request (e.g. {'customer_name': 'Acme', 'action': 'create_quotation'}).",
+    )
+    confidence: float = Field(
+        ..., description="Confidence score from 0.0 to 1.0 of this understanding."
+    )
     requires_clarification: bool = Field(
-        ..., description="True if the request is ambiguous (e.g. 'create one', 'do it') and the context is insufficient, requiring clarification."
+        ...,
+        description="True if the request is ambiguous (e.g. 'create one', 'do it') and the context is insufficient, requiring clarification.",
     )
     clarification_question: str | None = Field(
         None, description="A concise question to ask the user if clarification is needed."
@@ -42,7 +49,8 @@ class IntentUnderstanding(BaseModel):
         description="The user's request rewritten to fix typos, correct grammar, and resolve pronouns using conversation context. Do NOT guess destructive intents.",
     )
     candidate_tools: list[str] = Field(
-        default_factory=list, description="List of tool names that might be relevant to satisfy this intent."
+        default_factory=list,
+        description="List of tool names that might be relevant to satisfy this intent.",
     )
     is_safe: bool = Field(
         ...,

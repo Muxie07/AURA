@@ -138,7 +138,6 @@ class GeminiProvider(LLMProvider):
         if finish_reason and str(finish_reason).upper() == "SAFETY":
             raise LLMContentBlockedError("Gemini blocked response due to safety filters.")
 
-
         candidate = response.candidates[0]
         text = response.text or ""
 
@@ -202,7 +201,6 @@ class GeminiProvider(LLMProvider):
         finish_reason = response.candidates[0].finish_reason
         if finish_reason and str(finish_reason).upper() == "SAFETY":
             raise LLMContentBlockedError("Gemini blocked response due to safety filters.")
-
 
         candidate = response.candidates[0]
         text = response.text or ""

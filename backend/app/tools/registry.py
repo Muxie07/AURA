@@ -28,6 +28,7 @@ logger = structlog.get_logger(__name__)
 # Simple in-memory circuit breaker
 _CIRCUIT_BREAKERS: dict[str, dict[str, Any]] = {}
 
+
 def check_circuit_breaker(tool_name: str) -> None:
     cb = _CIRCUIT_BREAKERS.get(tool_name)
     if not cb:
@@ -38,6 +39,7 @@ def check_circuit_breaker(tool_name: str) -> None:
         else:
             # Half-open, reset
             cb["failures"] = 0
+
 
 def record_circuit_breaker_result(tool_name: str, success: bool) -> None:
     if tool_name not in _CIRCUIT_BREAKERS:
@@ -64,9 +66,35 @@ class ToolRegistry:
         self.mcp_initialized = True
         return
 
-    def register(self, executor: BaseToolExecutor) -> None:
+    async def ensure_utcp_initialized(
+        self, organization_id: Any, db: AsyncSession | None = None
+    ) -> None:
+        """Loads and registers active tenant UTCP tools into the registry."""
+        if not db:
+            return
+        try:
+            from app.database.models import ExternalToolEndpoint
+            from app.tools.utcp.manager import UTCPClientManager
+
+            stmt = sa.select(ExternalToolEndpoint).where(
+                ExternalToolEndpoint.organization_id == organization_id,
+                ExternalToolEndpoint.protocol == "utcp",
+                ExternalToolEndpoint.is_active == True,
+            )
+            endpoints = (await db.scalars(stmt)).all()
+            if endpoints:
+                manager = UTCPClientManager(self)
+                for ep in endpoints:
+                    if ep.manifest_data:
+                        await manager.register_manifest(
+                            organization_id, ep.manifest_data, registry=self
+                        )
+        except Exception as e:
+            logger.warning("utcp.init_failed", org_id=str(organization_id), error=str(e))
+
+    def register(self, executor: BaseToolExecutor, overwrite: bool = False) -> None:
         name = executor.definition.name
-        if name in self._tools:
+        if name in self._tools and not overwrite:
             raise ValueError(f"Tool {name} is already registered.")
         self._tools[name] = executor
         logger.info("tool.registered", name=name, source=executor.definition.source)
@@ -135,7 +163,7 @@ class ToolRegistry:
             tool_name=name,
             risk_level=definition.risk_level,
             arguments=clean_args,
-            permissions=["tools:read", "tools:write", "tools:external"], # TODO inject from context
+            permissions=["tools:read", "tools:write", "tools:external"],  # TODO inject from context
         )
 
         policy_decision = PolicyEngine.evaluate(policy_ctx)
@@ -145,32 +173,42 @@ class ToolRegistry:
 
         if policy_decision.decision == PolicyDecision.REQUIRE_APPROVAL:
             # Check DB for consumed/approved status
-            approval_stmt = sa.text("""
-                UPDATE approval_requests
-                SET status = 'executed', updated_at = :now
-                WHERE agent_run_id = :run_id
-                  AND tool_name = :tool_name
-                  AND status = 'approved'
-                  AND args_hash = :args_hash
-                  AND expires_at > :now
-                  AND organization_id = :org_id
-                RETURNING id
-            """)
-            result = await db.execute(approval_stmt, {
-                "now": datetime.now(UTC),
-                "run_id": context.agent_run_id,
-                "tool_name": name,
-                "args_hash": args_hash,
-                "org_id": context.organization_id
-            })
-            approved_id = result.scalar_one_or_none()
-            if not approved_id:
+            now_dt = datetime.now(UTC)
+            stmt = sa.select(ApprovalRequest).where(
+                ApprovalRequest.agent_run_id == context.agent_run_id,
+                ApprovalRequest.tool_name == name,
+                ApprovalRequest.status == ApprovalStatus.APPROVED,
+            )
+            approved_candidates = (await db.scalars(stmt)).all()
+            approved_req = None
+            for cand in approved_candidates:
+                if cand.args_hash == args_hash:
+                    if cand.expires_at:
+                        exp = (
+                            cand.expires_at
+                            if cand.expires_at.tzinfo
+                            else cand.expires_at.replace(tzinfo=UTC)
+                        )
+                        if exp > now_dt:
+                            approved_req = cand
+                            break
+                    else:
+                        approved_req = cand
+                        break
+
+            if approved_req:
+                approved_req.status = ApprovalStatus.EXECUTED
+                approved_req.updated_at = now_dt
+                await db.flush()
+                context.approved = True
+                context.approval_id = approved_req.id
+            else:
                 # Need to check if there is a pending one
                 pending = await db.scalar(
                     sa.select(ApprovalRequest).where(
                         ApprovalRequest.agent_run_id == context.agent_run_id,
                         ApprovalRequest.tool_name == name,
-                        ApprovalRequest.status == ApprovalStatus.PENDING
+                        ApprovalRequest.status == ApprovalStatus.PENDING,
                     )
                 )
                 if pending:
@@ -182,11 +220,13 @@ class ToolRegistry:
                     sa.select(ApprovalRequest).where(
                         ApprovalRequest.agent_run_id == context.agent_run_id,
                         ApprovalRequest.tool_name == name,
-                        ApprovalRequest.status == ApprovalStatus.DENIED
+                        ApprovalRequest.status == ApprovalStatus.DENIED,
                     )
                 )
                 if denied:
-                    raise ToolAuthorizationError("Policy Denied: Action was rejected by human approver")
+                    raise ToolAuthorizationError(
+                        "Policy Denied: Action was rejected by human approver"
+                    )
 
                 # Need a new approval
                 raise ApprovalRequiredError(reason=policy_decision.reason, args_hash=args_hash)
@@ -217,9 +257,9 @@ class ToolRegistry:
                 duration_ms=0,
                 result=ToolResult(status="failed", message="Started"),
                 input_hash=args_hash,
-                status="running"
+                status="running",
             )
-            await db.commit() # Ensure it's durable before side effects
+            await db.commit()  # Ensure it's durable before side effects
 
         # Circuit breaker check
         check_circuit_breaker(name)
@@ -239,16 +279,19 @@ class ToolRegistry:
             except ToolError as e:
                 record_circuit_breaker_result(name, False)
                 if e.retryable and attempts <= max_retries:
-                    await asyncio.sleep(2 ** attempts)
+                    await asyncio.sleep(2**attempts)
                     continue
                 result = ToolResult(
-                    status="failed", error_type=e.error_type, message=e.message, retryable=e.retryable
+                    status="failed",
+                    error_type=e.error_type,
+                    message=e.message,
+                    retryable=e.retryable,
                 )
                 break
             except Exception:
                 record_circuit_breaker_result(name, False)
                 if attempts <= max_retries:
-                    await asyncio.sleep(2 ** attempts)
+                    await asyncio.sleep(2**attempts)
                     continue
                 result = ToolResult(
                     status="failed",
@@ -261,8 +304,11 @@ class ToolRegistry:
         # Result size cap (prevent massive LLM context explosion)
         if result and result.result:
             result_str = json.dumps(result.result, default=str)
-            if len(result_str) > 50000: # 50k chars max
-                result.result = {"error": "Result size exceeded 50000 characters. Consider refining your search.", "truncated_preview": result_str[:1000]}
+            if len(result_str) > 50000:  # 50k chars max
+                result.result = {
+                    "error": "Result size exceeded 50000 characters. Consider refining your search.",
+                    "truncated_preview": result_str[:1000],
+                }
 
         duration_ms = int((time.perf_counter() - start_time) * 1000)
 
@@ -283,7 +329,7 @@ class ToolRegistry:
             result=result,
             input_hash=args_hash,
             status=result.status,
-            existing_audit_id=audit_id
+            existing_audit_id=audit_id,
         )
 
         return result

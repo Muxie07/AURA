@@ -42,7 +42,19 @@ class RAGService:
                 prompt=f"Generate synonyms and closely related keywords for this query: '{question}'. Return a single string with the original query and the new keywords, space-separated.",
                 system_prompt="You are a search query expansion assistant. Return ONLY the expanded query string, no other text.",
             )
-            if exp and exp.strip() and not any(phrase in exp.lower() for phrase in ["offline", "fallback mode", "how else can i assist", "i cannot perform"]):
+            if (
+                exp
+                and exp.strip()
+                and not any(
+                    phrase in exp.lower()
+                    for phrase in [
+                        "offline",
+                        "fallback mode",
+                        "how else can i assist",
+                        "i cannot perform",
+                    ]
+                )
+            ):
                 expanded_query = exp.strip()
         except Exception as e:
             logger.warning("query_expansion_failed", error=str(e))

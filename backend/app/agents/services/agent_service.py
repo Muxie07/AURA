@@ -36,12 +36,14 @@ class AgentWorkflowService:
 
     async def initialize(self, organization_id: uuid.UUID):
         import os
+
         mcp_url = os.environ.get("MCP_SERVER_URL", "http://mcp-server:8000/api/v1/mcp/messages")
 
         if self.mcp_manager:
             mcp_executors = await self.mcp_manager.discover_tools(mcp_url, str(organization_id))
             for executor in mcp_executors:
                 self.action_registry.register(executor)
+
     def _build_graph(self) -> WorkflowGraph:
         graph = WorkflowGraph()
 
@@ -87,14 +89,130 @@ class AgentWorkflowService:
         user = await self.db.scalar(sa.select(User).where(User.id == run.user_id))
         org_id = user.organization_id if user else None
 
-        state = AgentState(
-            run_id=run.id,
-            organization_id=org_id,
-            user_id=run.user_id,
-            conversation_id=run.conversation_id,
-            original_request=run.user_request,
-            status=AgentNodeState.CREATED,
-        )
+        # Check if this run is an approval resumption or cancellation
+        from app.database.models import ApprovalRequest, ApprovalStatus
+
+        approval_records = (
+            await self.db.scalars(
+                sa.select(ApprovalRequest).where(ApprovalRequest.agent_run_id == run_id)
+            )
+        ).all()
+
+        approved_req = None
+        denied_req = None
+        for a in approval_records:
+            if a.status == ApprovalStatus.APPROVED:
+                approved_req = a
+            elif a.status == ApprovalStatus.DENIED:
+                denied_req = a
+
+        # If human approver explicitly denied the action, complete run gracefully with cancellation notice
+        if denied_req and not approved_req:
+            rejection_reason = f": {denied_req.denial_reason}" if denied_req.denial_reason else ""
+            msg = f"Operation cancelled: Human approval for '{denied_req.action_summary}' was denied{rejection_reason}."
+            run.status = AgentRunStatus.COMPLETED
+            run.final_response = msg
+            run.completed_at = datetime.now(UTC)
+            assistant_msg = Message(
+                organization_id=run.organization_id,
+                conversation_id=run.conversation_id,
+                role=MessageRole.ASSISTANT,
+                content=msg,
+                agent_run_id=run.id,
+            )
+            self.db.add(assistant_msg)
+            await self.db.commit()
+
+            # Dispatch cancellation completion notice (Phase 6)
+            try:
+                from app.services.email_service import EmailNotificationService
+
+                await EmailNotificationService.send_completion_notification_email(
+                    approval_id=denied_req.id,
+                    tool_name=denied_req.tool_name,
+                    action_summary=denied_req.action_summary,
+                    status="CANCELLED",
+                    result={
+                        "status": "cancelled",
+                        "reason": denied_req.denial_reason or "Human rejected action",
+                    },
+                    error=denied_req.denial_reason
+                    or "Human approver denied execution authorization",
+                    agent_run_id=run.id,
+                    organization_id=run.organization_id,
+                    company_name=(denied_req.action_details or {}).get("company_name"),
+                )
+            except Exception as comp_err:
+                logger.warning("failed_to_dispatch_cancellation_email", error=str(comp_err))
+            return AgentState(
+                run_id=run.id,
+                organization_id=org_id,
+                user_id=run.user_id,
+                conversation_id=run.conversation_id,
+                original_request=run.user_request,
+                status=AgentNodeState.COMPLETED,
+                final_response=msg,
+            )
+
+        # Rehydrate from checkpoint if resuming an approved execution
+        checkpoint = (run.plan or {}).get("_checkpoint") if isinstance(run.plan, dict) else None
+        if approved_req and checkpoint:
+            logger.info(
+                "resuming_agent_run_from_approval_checkpoint",
+                run_id=str(run.id),
+                tool=approved_req.tool_name,
+            )
+            from app.agents.core.state import ActionHistoryItem, AgentAction, AgentPlan
+
+            restored_plan = (
+                AgentPlan.model_validate(checkpoint["plan"]) if checkpoint.get("plan") else None
+            )
+            restored_actions = [
+                AgentAction.model_validate(act) for act in checkpoint.get("current_actions", [])
+            ]
+            restored_history = []
+            for h in checkpoint.get("action_history", []):
+                try:
+                    act = AgentAction.model_validate(h["action"])
+                    s_at = datetime.fromisoformat(h["started_at"]) if h.get("started_at") else None
+                    c_at = (
+                        datetime.fromisoformat(h["completed_at"]) if h.get("completed_at") else None
+                    )
+                    restored_history.append(
+                        ActionHistoryItem(
+                            action=act,
+                            started_at=s_at,
+                            completed_at=c_at,
+                            result=h.get("result"),
+                            error=None,
+                        )
+                    )
+                except Exception:
+                    pass
+
+            state = AgentState(
+                run_id=run.id,
+                organization_id=org_id,
+                user_id=run.user_id,
+                conversation_id=run.conversation_id,
+                original_request=run.user_request,
+                status=AgentNodeState.READY_TO_EXECUTE,
+                plan=restored_plan,
+                current_actions=restored_actions,
+                action_history=restored_history,
+                retrieved_context=checkpoint.get("retrieved_context", []),
+                iteration_count=checkpoint.get("iteration_count", 0),
+                replans=checkpoint.get("replans", 0),
+            )
+        else:
+            state = AgentState(
+                run_id=run.id,
+                organization_id=org_id,
+                user_id=run.user_id,
+                conversation_id=run.conversation_id,
+                original_request=run.user_request,
+                status=AgentNodeState.CREATED,
+            )
 
         tracer = AgentTracer(db=self.db, run_id=run.id, organization_id=org_id)
         import asyncio
@@ -131,8 +249,34 @@ class AgentWorkflowService:
                 if state.errors:
                     run.error_message = state.errors[-1].message
 
-            if state.plan:
-                run.plan = state.plan.model_dump()
+            if state.status == AgentNodeState.WAITING:
+                run.status = AgentRunStatus.AWAITING_APPROVAL
+                # Save execution snapshot so resumption resumes cleanly
+                checkpoint = {
+                    "status": state.status.value,
+                    "plan": state.plan.model_dump() if state.plan else None,
+                    "current_actions": [a.model_dump() for a in state.current_actions],
+                    "action_history": [
+                        {
+                            "action": h.action.model_dump(),
+                            "started_at": h.started_at.isoformat() if h.started_at else None,
+                            "completed_at": h.completed_at.isoformat() if h.completed_at else None,
+                            "result": h.result,
+                            "error": h.error.model_dump() if h.error else None,
+                        }
+                        for h in state.action_history
+                    ],
+                    "retrieved_context": state.retrieved_context,
+                    "iteration_count": state.iteration_count,
+                    "replans": state.replans,
+                }
+                base_plan = state.plan.model_dump() if state.plan else {}
+                base_plan["_checkpoint"] = checkpoint
+                run.plan = base_plan
+            elif state.plan:
+                base_plan = state.plan.model_dump()
+                base_plan.pop("_checkpoint", None)
+                run.plan = base_plan
 
             if run.status != AgentRunStatus.AWAITING_APPROVAL:
                 run.completed_at = datetime.now(UTC)
@@ -162,6 +306,33 @@ class AgentWorkflowService:
                 self.db.add(assistant_msg)
 
             await self.db.commit()
+
+            # Phase 6: Dispatch completion notification email for approved executions
+            if approved_req:
+                try:
+                    from app.services.email_service import EmailNotificationService
+
+                    tool_result = None
+                    for h in reversed(state.action_history):
+                        if h.action.action_type == approved_req.tool_name:
+                            tool_result = h.result
+                            break
+                    if not tool_result:
+                        tool_result = state.final_response
+
+                    await EmailNotificationService.send_completion_notification_email(
+                        approval_id=approved_req.id,
+                        tool_name=approved_req.tool_name,
+                        action_summary=approved_req.action_summary,
+                        status="COMPLETED" if run.status == AgentRunStatus.COMPLETED else "FAILED",
+                        result=tool_result,
+                        error=run.error_message,
+                        agent_run_id=run.id,
+                        organization_id=run.organization_id,
+                        company_name=(approved_req.action_details or {}).get("company_name"),
+                    )
+                except Exception as comp_err:
+                    logger.warning("failed_to_dispatch_completion_email", error=str(comp_err))
 
             return state
 

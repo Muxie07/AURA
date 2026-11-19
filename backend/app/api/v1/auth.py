@@ -46,7 +46,9 @@ async def login(body: LoginRequest, db: DatabaseDep, settings: SettingsDep):
         "iss": settings.aura_jwt_iss,
         "aud": settings.aura_jwt_aud,
     }
-    token = jwt.encode(payload, settings.aura_secret_key.get_secret_value(), algorithm=settings.aura_jwt_algorithm)
+    token = jwt.encode(
+        payload, settings.aura_secret_key.get_secret_value(), algorithm=settings.aura_jwt_algorithm
+    )
     return TokenResponse(
         access_token=token,
         user_id=str(user.id),

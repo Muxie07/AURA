@@ -1,0 +1,123 @@
+[
+  {
+    "id": "inv-e109e2cc",
+    "organization_id": "20d25bca-9012-4cc1-b24c-23c0290f12fc",
+    "name": "Integration Tester",
+    "email": "tester@aura.internal",
+    "role": "DEVELOPER",
+    "status": "INVITED",
+    "initials": "IT",
+    "created_at": "2026-11-16T17:36:49.666269+00:00",
+    "invited_by": "test@example.com"
+  },
+  {
+    "id": "inv-cc8579bc",
+    "organization_id": "fdd4e5c6-b7b5-4ec4-9853-a16124eb57dc",
+    "name": "Integration Tester",
+    "email": "tester@aura.internal",
+    "role": "DEVELOPER",
+    "status": "INVITED",
+    "initials": "IT",
+    "created_at": "2026-11-16T17:37:33.535634+00:00",
+    "invited_by": "test@example.com"
+  },
+  {
+    "id": "inv-e3acb660",
+    "organization_id": "ade02732-da07-4405-841f-d9f3d5f03bb7",
+    "name": "Integration Tester",
+    "email": "tester@aura.internal",
+    "role": "DEVELOPER",
+    "status": "INVITED",
+    "initials": "IT",
+    "created_at": "2026-11-16T17:38:07.795387+00:00",
+    "invited_by": "test@example.com"
+  },
+  {
+    "id": "inv-9258d366",
+    "organization_id": "696ea38d-c3dc-4d3e-adc1-42b7a94a4e84",
+    "name": "Integration Tester",
+    "email": "tester@aura.internal",
+    "role": "DEVELOPER",
+    "status": "INVITED",
+    "initials": "IT",
+    "created_at": "2026-11-16T17:40:09.452476+00:00",
+    "invited_by": "test@example.com"
+  },
+  {
+    "id": "inv-5992b46a",
+    "organization_id": "7d709c01-7739-4203-8392-ff69c74d65e1",
+    "name": "Integration Tester",
+    "email": "tester@aura.internal",
+    "role": "DEVELOPER",
+    "status": "INVITED",
+    "initials": "IT",
+    "created_at": "2026-11-16T17:41:14.438284+00:00",
+    "invited_by": "test@example.com"
+  },
+  {
+    "id": "inv-cf671248",
+    "organization_id": "85a8363f-890c-433f-a567-e0bc65f5c93e",
+    "name": "Integration Tester",
+    "email": "tester@aura.internal",
+    "role": "DEVELOPER",
+    "status": "INVITED",
+    "initials": "IT",
+    "created_at": "2026-11-16T17:41:43.983126+00:00",
+    "invited_by": "test@example.com"
+  },
+  {
+    "id": "inv-9ce343c9",
+    "organization_id": "d0295656-1d08-4be9-8894-93e3acc0e62f",
+    "name": "Integration Tester",
+    "email": "tester@aura.internal",
+    "role": "DEVELOPER",
+    "status": "INVITED",
+    "initials": "IT",
+    "created_at": "2026-11-16T17:42:15.997665+00:00",
+    "invited_by": "test@example.com"
+  },
+  {
+    "id": "inv-4f6b2a69",
+    "organization_id": "8b4d77b9-51e8-4069-8f35-26cdbaf91ee8",
+    "name": "Integration Tester",
+    "email": "tester@aura.internal",
+    "role": "DEVELOPER",
+    "status": "INVITED",
+    "initials": "IT",
+    "created_at": "2026-11-16T17:51:54.366771+00:00",
+    "invited_by": "test@example.com"
+  },
+  {
+    "id": "inv-2d1e523d",
+    "organization_id": "57edc374-b791-472c-bbda-3aee53e71eea",
+    "name": "Integration Tester",
+    "email": "tester@aura.internal",
+    "role": "DEVELOPER",
+    "status": "INVITED",
+    "initials": "IT",
+    "created_at": "2026-11-16T18:20:49.173251+00:00",
+    "invited_by": "test@example.com"
+  },
+  {
+    "id": "inv-5b5cfe68",
+    "organization_id": "152b90d9-848e-4aea-83e4-62175d81cd7a",
+    "name": "Integration Tester",
+    "email": "tester@aura.internal",
+    "role": "DEVELOPER",
+    "status": "INVITED",
+    "initials": "IT",
+    "created_at": "2026-11-19T07:04:23.941007+00:00",
+    "invited_by": "test@example.com"
+  },
+  {
+    "id": "inv-23237ec4",
+    "organization_id": "5c0cc964-c15f-4098-9cb1-a90f98a70ad7",
+    "name": "Integration Tester",
+    "email": "tester@aura.internal",
+    "role": "DEVELOPER",
+    "status": "INVITED",
+    "initials": "IT",
+    "created_at": "2026-11-19T07:07:46.729971+00:00",
+    "invited_by": "test@example.com"
+  }
+]

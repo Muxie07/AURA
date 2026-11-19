@@ -8,10 +8,8 @@ when operating without third-party paid LLM dependencies.
 from __future__ import annotations
 
 import datetime
-from datetime import timezone, timedelta
-import json
 import re
-from typing import Any
+from datetime import timedelta, timezone
 
 # Indian Standard Time (UTC+5:30)
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -75,7 +73,19 @@ class AdaptiveEngine:
 
     @classmethod
     def _is_datetime_query(cls, q: str) -> bool:
-        if q in {"date", "time", "today", "day", "clock", "calendar", "what time", "what date", "what day", "tomorrow", "yesterday"}:
+        if q in {
+            "date",
+            "time",
+            "today",
+            "day",
+            "clock",
+            "calendar",
+            "what time",
+            "what date",
+            "what day",
+            "tomorrow",
+            "yesterday",
+        }:
             return True
         if any(w in q for w in cls.WEEKDAYS):
             return True
@@ -171,7 +181,9 @@ class AdaptiveEngine:
                 return f"**{target_day.capitalize()} this week is {target_date.strftime('%A, %d %B %Y')} ({target_date.strftime('%d.%m.%Y')}).**"
 
         # --- C. N days from now / N days ago ---
-        days_ahead_match = re.search(r"(\d+)\s+days?\s+(?:from\s+now|later|ahead|after)", q) or re.search(r"in\s+(\d+)\s+days?", q)
+        days_ahead_match = re.search(
+            r"(\d+)\s+days?\s+(?:from\s+now|later|ahead|after)", q
+        ) or re.search(r"in\s+(\d+)\s+days?", q)
         if days_ahead_match:
             n = int(days_ahead_match.group(1))
             target_date = now + timedelta(days=n)
@@ -202,11 +214,15 @@ class AdaptiveEngine:
 
         # --- F. Current Date and/or Time (when specifically asked about today/now) ---
         if "time" in q and "date" not in q and "day" not in q:
-            return f"**The current time is {time_12h} IST (Asia/Kolkata) on {day_name}, {date_str}.**"
+            return (
+                f"**The current time is {time_12h} IST (Asia/Kolkata) on {day_name}, {date_str}.**"
+            )
         if "date" in q and "time" not in q:
             return f"**Today's date is {day_name}, {date_str} (12.10.2026).**"
 
-        return f"**Today is {day_name}, {date_str} (12.10.2026). The current time is {time_12h} IST.**"
+        return (
+            f"**Today is {day_name}, {date_str} (12.10.2026). The current time is {time_12h} IST.**"
+        )
 
     # -------------------------------------------------------------------------
     # Domain 2: Indian Government Holidays
@@ -335,7 +351,9 @@ According to the **India Meteorological Department (IMD)**, India features a tro
     @classmethod
     def _handle_coding(cls, q: str, raw_query: str) -> str:
         # Check specific coding topics
-        if "if" in q and ("statement" in q or "write" in q or "python" in q or "code" in q or "condition" in q):
+        if "if" in q and (
+            "statement" in q or "write" in q or "python" in q or "code" in q or "condition" in q
+        ):
             return """### 🐍 Python: If / Elif / Else Conditional Statements
 
 Here is how conditional `if` statements work in Python:
@@ -579,14 +597,27 @@ if __name__ == "__main__":
     # -------------------------------------------------------------------------
     @classmethod
     def _is_greeting_or_intro_query(cls, q: str) -> bool:
-        greetings = ["hello", "hi aura", "hey aura", "good morning", "good evening", "good afternoon", "who are you", "what can you do"]
+        greetings = [
+            "hello",
+            "hi aura",
+            "hey aura",
+            "good morning",
+            "good evening",
+            "good afternoon",
+            "who are you",
+            "what can you do",
+        ]
         return any(g in q for g in greetings) or q in ["hi", "hey", "hola"]
 
     @classmethod
     def _handle_greeting_or_intro(cls, q: str) -> str:
         now = cls.get_current_ist_time()
         hour = now.hour
-        greeting = "Good morning" if 5 <= hour < 12 else ("Good afternoon" if 12 <= hour < 17 else "Good evening")
+        greeting = (
+            "Good morning"
+            if 5 <= hour < 12
+            else ("Good afternoon" if 12 <= hour < 17 else "Good evening")
+        )
 
         return f"""### 👋 {greeting}! I am AURA — Your Enterprise AI Platform
 

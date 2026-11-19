@@ -18,6 +18,18 @@ class PolicyEngine:
                 reason="External side effects always require human approval.",
             )
 
+        # 1b. Sensitive Commercial Rule: Discounts exceeding 20% require human approval
+        discount_val = 0.0
+        try:
+            discount_val = float(context.arguments.get("discount_percent", 0.0) or 0.0)
+        except (ValueError, TypeError):
+            pass
+        if discount_val > 20.0:
+            return PolicyRuleResult(
+                decision=PolicyDecision.REQUIRE_APPROVAL,
+                reason=f"Commercial discount of {discount_val}% exceeds auto-approval threshold of 20%. Human authorization required.",
+            )
+
         # 2. Write operations
         if context.risk_level == RiskLevel.WRITE:
             if "tools:write" not in context.permissions:

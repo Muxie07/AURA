@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from app.config.settings import Environment, ModelProvider, Settings, get_settings
+from app.config.settings import EmbeddingProvider, Environment, ModelProvider, Settings, get_settings
 from app.database.base import Base, get_db_session
 from app.database.models import (
     Conversation,
@@ -48,15 +48,16 @@ TEST_SETTINGS = Settings(
     aura_env=Environment.DEVELOPMENT,
     aura_debug=True,
     aura_secret_key="test-secret-key-at-least-32-characters-long",  # type: ignore[arg-type]
-    postgres_host=os.environ.get("POSTGRES_HOST", "postgres"),
+    postgres_host=os.environ.get("POSTGRES_HOST") or "localhost",
     postgres_db="aura_test",
     postgres_user=os.environ.get("POSTGRES_USER", "aura"),
-    postgres_password=os.environ.get("POSTGRES_PASSWORD", "aura_password"),  # type: ignore[arg-type]
-    redis_host=os.environ.get("REDIS_HOST", "redis"),
+    postgres_password=os.environ.get("POSTGRES_PASSWORD") or "change-this-password-in-production",  # type: ignore[arg-type]
+    redis_host=os.environ.get("REDIS_HOST") or "localhost",
     redis_port=int(os.environ.get("REDIS_PORT", "6379")),
     aura_log_format="text",  # type: ignore[arg-type]
     aura_log_level="WARNING",  # Quiet during tests
     primary_llm_provider=ModelProvider.MOCK,
+    embedding_provider=EmbeddingProvider.OLLAMA,
 )
 
 

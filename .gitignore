@@ -146,3 +146,7 @@ secrets/
 # =============================================================================
 # Keep migrations directory but not pycache inside it
 backend/migrations/__pycache__/
+
+# OAuth / Gmail credentials file
+config/gmail_credentials.json
+backend/config/gmail_credentials.json

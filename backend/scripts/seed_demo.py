@@ -288,6 +288,7 @@ async def seed_data():
             await session.flush()
 
             msg1 = Message(
+                organization_id=org.id,
                 conversation_id=conv.id, role=MessageRole.USER, content=f"Please help with: {title}"
             )
             session.add(msg1)

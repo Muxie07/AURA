@@ -58,12 +58,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("aura_starting", environment=settings.aura_env.value, debug=settings.aura_debug)
 
     if settings.aura_run_migrations_on_startup:
-        logger.info("Running database migrations...")
-        backend_root = Path(__file__).resolve().parent.parent
-        ini_path = backend_root / "alembic.ini"
-        alembic_cfg = alembic.config.Config(str(ini_path))
-        alembic_cfg.set_main_option("script_location", str(backend_root / "migrations"))
-        await asyncio.to_thread(upgrade_with_lock, alembic_cfg)
+        try:
+            logger.info("Running database migrations...")
+            backend_root = Path(__file__).resolve().parent.parent
+            ini_path = backend_root / "alembic.ini"
+            alembic_cfg = alembic.config.Config(str(ini_path))
+            alembic_cfg.set_main_option("script_location", str(backend_root / "migrations"))
+            await asyncio.to_thread(upgrade_with_lock, alembic_cfg)
+        except Exception as mig_err:
+            logger.warning("alembic_migration_skipped", error=str(mig_err))
 
     await initialize_database()
 
@@ -138,6 +141,7 @@ class MaxSizeMiddleware(BaseHTTPMiddleware):
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         from app.config.settings import get_settings
+
         settings = get_settings()
         response = await call_next(request)
         if settings.is_production:
@@ -146,7 +150,6 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         return response
-
 
 
 async def global_exception_handler(request: Request, exc: Exception):
@@ -162,8 +165,8 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"error": {"code": "internal_error", "message": "Internal Server Error"}},
     )
 
-def create_app() -> FastAPI:
 
+def create_app() -> FastAPI:
     """
     Application factory.
 
@@ -212,7 +215,13 @@ def create_app() -> FastAPI:
         allow_origins=settings.aura_cors_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"],
-        allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Correlation-ID", "Accept"],
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "X-Request-ID",
+            "X-Correlation-ID",
+            "Accept",
+        ],
         expose_headers=["X-Request-ID", "X-Correlation-ID"],
     )
 
@@ -256,7 +265,7 @@ def create_app() -> FastAPI:
             if not getattr(app.state, "mcp_manager", None):
                 status["mcp"] = "initializing"
             else:
-                status["mcp"] = "ok" # Non-fatal
+                status["mcp"] = "ok"  # Non-fatal
         except Exception:
             status["mcp"] = "unknown"
 

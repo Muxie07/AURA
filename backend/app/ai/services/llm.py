@@ -65,7 +65,9 @@ class LLMService:
         if check.status == BudgetStatus.EXCEEDED:
             raise Exception(f"Budget exceeded: {check.message}")
 
-    async def _update_usage_cost(self, request: GenerationRequest, result: GenerationResult) -> None:
+    async def _update_usage_cost(
+        self, request: GenerationRequest, result: GenerationResult
+    ) -> None:
         from app.evaluation.cost import CostManager
 
         est = CostManager.estimate_cost(
@@ -85,7 +87,7 @@ class LLMService:
                 provider=result.provider,
                 input_tokens=result.usage.prompt_tokens,
                 output_tokens=result.usage.completion_tokens,
-                total_cost=est.estimated_cost_usd
+                total_cost=est.estimated_cost_usd,
             )
 
     async def generate_with_fallback(
@@ -285,7 +287,11 @@ class LLMService:
                 raise e
 
         if fallback_used:
-            log.warning("DEBUG_FALLBACK_STATE", provider=str(self.fallback_provider), model=str(self.settings.fallback_llm_model))
+            log.warning(
+                "DEBUG_FALLBACK_STATE",
+                provider=str(self.fallback_provider),
+                model=str(self.settings.fallback_llm_model),
+            )
             if self.fallback_provider and self.settings.fallback_llm_model:
                 log.info(
                     "llm_stream_using_fallback_provider",

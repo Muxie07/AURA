@@ -56,6 +56,11 @@ class CurrentUser(BaseModel):
     user_id: uuid.UUID
     organization_id: uuid.UUID
     role: UserRole
+    email: str | None = None
+
+    @property
+    def id(self) -> uuid.UUID:
+        return self.user_id
 
 
 def get_current_user_token(
@@ -99,6 +104,7 @@ async def get_current_user(
             user_id=user.id,
             organization_id=user.organization_id,
             role=user.role,
+            email=user.email,
         )
     except ValueError as e:
         raise HTTPException(status_code=401, detail="Invalid UUID in token claims") from e

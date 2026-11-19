@@ -36,7 +36,7 @@ async def test_organization_defaults(db_session: AsyncSession) -> None:
     """Organization should have sensible defaults."""
     org = Organization(
         name="Test Org",
-        slug="test-org",
+        slug=f"test-org-{uuid.uuid4().hex[:6]}",
     )
     db_session.add(org)
     await db_session.flush()
@@ -50,7 +50,7 @@ async def test_organization_defaults(db_session: AsyncSession) -> None:
 @pytest.mark.asyncio
 async def test_organization_repr(db_session: AsyncSession) -> None:
     """Organization __repr__ should include id."""
-    org = Organization(name="Test", slug="test")
+    org = Organization(name="Test", slug=f"test-{uuid.uuid4().hex[:6]}")
     db_session.add(org)
     await db_session.flush()
     assert "Organization" in repr(org)

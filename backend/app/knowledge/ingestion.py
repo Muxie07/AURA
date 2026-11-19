@@ -55,6 +55,7 @@ class DocumentIngestionService:
 
         try:
             import hashlib
+
             file_hash = hashlib.sha256(file_content).hexdigest()
             document.metadata_["checksum"] = file_hash
 
@@ -70,15 +71,21 @@ class DocumentIngestionService:
                     document.status = DocumentStatus.FAILED
                     document.metadata_["error"] = "Duplicate checksum"
                     await self.db.commit()
-                    logger.info("document_ingestion_skipped_duplicate", document_id=str(document_id))
+                    logger.info(
+                        "document_ingestion_skipped_duplicate", document_id=str(document_id)
+                    )
                     return
 
             # Versioning: mark older docs with same filename as not latest
-            ver_stmt = sa.update(Document).where(
-                Document.knowledge_base_id == document.knowledge_base_id,
-                Document.filename == document.filename,
-                Document.id != document.id
-            ).values(is_latest=False)
+            ver_stmt = (
+                sa.update(Document)
+                .where(
+                    Document.knowledge_base_id == document.knowledge_base_id,
+                    Document.filename == document.filename,
+                    Document.id != document.id,
+                )
+                .values(is_latest=False)
+            )
             await self.db.execute(ver_stmt)
 
             document.status = DocumentStatus.PROCESSING
@@ -87,11 +94,11 @@ class DocumentIngestionService:
             # 1. Save file & magic byte validate
             # Pure python magic byte check for PDF and Office files
             header = file_content[:4]
-            if header.startswith(b'%PDF'):
+            if header.startswith(b"%PDF"):
                 _mime_group = "pdf"
-            elif header.startswith(b'PK\x03\x04'):
+            elif header.startswith(b"PK\x03\x04"):
                 _mime_group = "office/docx"
-            elif header.startswith(b'\xd0\xcf\x11\xe0'):
+            elif header.startswith(b"\xd0\xcf\x11\xe0"):
                 _mime_group = "office/legacy"
             elif all(b < 128 for b in header):
                 _mime_group = "text"
@@ -167,7 +174,7 @@ class DocumentIngestionService:
         result = await self.db.execute(stmt)
         chunks = result.scalars().all()
         for i in range(0, len(chunks), batch_size):
-            batch = chunks[i:i + batch_size]
+            batch = chunks[i : i + batch_size]
             texts = [c.content for c in batch]
             embeddings = await self.llm.provider.embed(texts, model=new_model)
             for j, chunk in enumerate(batch):

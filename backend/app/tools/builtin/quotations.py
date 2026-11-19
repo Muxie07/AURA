@@ -1,4 +1,8 @@
+import json
+import os
+import tempfile
 import uuid
+from datetime import UTC
 from decimal import Decimal
 from typing import Any
 
@@ -9,6 +13,122 @@ from app.database.models import Customer, Product, Quotation
 from app.tools.builtin.invoices import CLOUD_INFOTECH_CATALOG
 from app.tools.executor import InternalToolExecutor
 from app.tools.schemas import RiskLevel, ToolContext, ToolDefinition
+
+QUOTATIONS_STORE_FILE = os.path.join(tempfile.gettempdir(), "aura_quotations_store.json")
+
+
+def _get_redis_sync():
+    try:
+        import redis
+
+        from app.config.settings import get_settings
+
+        return redis.from_url(get_settings().redis_url, socket_timeout=1.0)
+    except Exception:
+        return None
+
+
+def _load_stored_quotations() -> list[dict[str, Any]]:
+    # Try Redis first
+    r = _get_redis_sync()
+    if r:
+        try:
+            raw = r.get("aura:stored_quotations")
+            if raw:
+                loaded = json.loads(raw)
+                if isinstance(loaded, list) and len(loaded) > 0:
+                    return loaded
+        except Exception:
+            pass
+    # Fallback to local file
+    if os.path.exists(QUOTATIONS_STORE_FILE):
+        try:
+            with open(QUOTATIONS_STORE_FILE, encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
+
+
+def _write_stored_quotations(quotes: list[dict[str, Any]]) -> None:
+    # Save to Redis
+    r = _get_redis_sync()
+    if r:
+        try:
+            r.set("aura:stored_quotations", json.dumps(quotes))
+        except Exception:
+            pass
+    # Save to local file
+    try:
+        with open(QUOTATIONS_STORE_FILE, "w", encoding="utf-8") as f:
+            json.dump(quotes, f, indent=2)
+    except Exception:
+        pass
+
+
+def save_generated_quotation(quotation: dict[str, Any]) -> None:
+    try:
+        quotes = _load_stored_quotations()
+        quotes = [q for q in quotes if q.get("quotation_id") != quotation.get("quotation_id")]
+        quotes.insert(0, quotation)
+        _write_stored_quotations(quotes[:100])
+    except Exception:
+        pass
+    try:
+        from app.tools.builtin.commercial_kb import sync_ingest_quotation
+
+        sync_ingest_quotation(quotation)
+    except Exception:
+        pass
+
+
+def find_stored_quotation(query: str = "") -> dict[str, Any] | None:
+    quotes = _load_stored_quotations()
+    if not quotes:
+        return None
+    q = (query or "").strip().lower()
+    if not q or q in ("current", "latest", "recent", "last", "quotation", "quote"):
+        return quotes[0]
+
+    noise = [
+        "show",
+        "me",
+        "the",
+        "current",
+        "quotation",
+        "quote",
+        "for",
+        "please",
+        "get",
+        "fetch",
+        "view",
+        "what",
+        "is",
+        "where",
+    ]
+    clean_parts = [w for w in q.split() if w not in noise]
+    clean_q = " ".join(clean_parts).strip() if clean_parts else q
+
+    for quote in quotes:
+        comp_name = quote.get("company_name", quote.get("customer", {}).get("name", "")).lower()
+        qid = quote.get("quotation_id", "").lower()
+        if (
+            (clean_q and clean_q in comp_name)
+            or (comp_name and comp_name in clean_q)
+            or clean_q in qid
+        ):
+            return quote
+
+    for quote in quotes:
+        comp_name = quote.get("company_name", quote.get("customer", {}).get("name", "")).lower()
+        if any(part in comp_name for part in clean_parts if len(part) > 1):
+            return quote
+
+    if any(k in q for k in ["current", "latest", "recent", "last", "today"]) or len(quotes) == 1:
+        return quotes[0]
+
+    return quotes[0]
+
 
 # Default enterprise mock clients
 MOCK_COMPANIES = {
@@ -74,7 +194,7 @@ async def quotation_create_draft_handler(
                 "address": arguments.get("address", "Corporate Tower, Suite 400"),
             }
 
-        # Match catalog model
+        # Match catalog model (exact match first, then longest matching key)
         catalog_item = None
         for key, val in CLOUD_INFOTECH_CATALOG.items():
             if key.lower() == model_number.lower():
@@ -82,8 +202,7 @@ async def quotation_create_draft_handler(
                 break
 
         if not catalog_item:
-            # Fuzzy model search
-            for key, val in CLOUD_INFOTECH_CATALOG.items():
+            for key in sorted(CLOUD_INFOTECH_CATALOG.keys(), key=len, reverse=True):
                 if model_number.lower() in key.lower() or key.lower() in model_number.lower():
                     catalog_item = val
                     break
@@ -105,10 +224,25 @@ async def quotation_create_draft_handler(
         discount_val = subtotal * (discount_pct / 100.0)
         taxable_value = subtotal - discount_val
 
+        from datetime import datetime, timedelta
+
+        now_utc = datetime.now(UTC)
+        now_ist = now_utc + timedelta(hours=5, minutes=30)
+        created_at = now_ist.isoformat()
+        created_date_formatted = now_ist.strftime("%A, %d %B %Y, %I:%M %p") + " IST"
+        q_date = now_ist.strftime("%d.%m.%Y")
+        valid_until = (now_ist + timedelta(days=30)).strftime("%d.%m.%Y")
+        valid_until_formatted = (now_ist + timedelta(days=30)).strftime("%d %B %Y")
+
         qid = f"Q-2026-{uuid.uuid4().hex[:6].upper()}"
 
-        return {
+        quote_res = {
             "quotation_id": qid,
+            "created_at": created_at,
+            "created_date_formatted": created_date_formatted,
+            "quotation_date": q_date,
+            "valid_until": valid_until,
+            "valid_until_formatted": valid_until_formatted,
             "status": "draft",
             "company_name": matched_comp["name"],
             "customer": matched_comp,
@@ -138,9 +272,11 @@ async def quotation_create_draft_handler(
                 "Prices based on official Cloud Infotech commercial distribution rate card.",
                 "Hardware includes 3 Years standard replacement warranty.",
                 "Surface transport across India is Free of Cost (FOC).",
-                "24*7 Technical support and emergency SLA coverage."
+                "24*7 Technical support and emergency SLA coverage.",
             ],
         }
+        save_generated_quotation(quote_res)
+        return quote_res
 
     # Path B: Database UUID lookup
     async with get_session_factory()() as db:

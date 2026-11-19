@@ -12,9 +12,20 @@ import {
   PrinterIcon,
   DocumentTextIcon,
   CheckBadgeIcon,
-  BuildingOfficeIcon
+  BuildingOfficeIcon,
+  ArrowDownTrayIcon,
+  ShareIcon,
+  EnvelopeIcon,
+  CheckIcon,
+  ClipboardDocumentIcon
 } from '@heroicons/react/24/outline';
 import { fetchApi } from '../lib/api';
+import {
+  generateInvoicePdf,
+  generateQuotationPdf,
+  getInvoiceUniversalShareTemplates,
+  getQuotationUniversalShareTemplates
+} from '../lib/pdfGenerator';
 
 interface Conversation {
   id: string;
@@ -377,7 +388,7 @@ function InvoiceSelectorCard({ data, onSend, isLoading }: InvoiceSelectorCardPro
               className="w-full text-xs bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 text-gray-800 font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white transition-all cursor-pointer"
             >
               {companies.map((c: any, i: number) => (
-                <option key={i} value={c.name}>
+                <option key={c.id || c.name || `company-${i}`} value={c.name}>
                   {c.name} {c.email ? `(${c.email})` : ''}
                 </option>
               ))}
@@ -667,7 +678,7 @@ function QuotationSelectorCard({ data, onSend, isLoading }: QuotationSelectorCar
               className="w-full text-xs bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-800 font-medium focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all cursor-pointer"
             >
               {companies.map((c: any, i: number) => (
-                <option key={i} value={c.name}>
+                <option key={c.id || c.name || `company-${i}`} value={c.name}>
                   {c.name} {c.email ? `(${c.email})` : ''}
                 </option>
               ))}
@@ -840,6 +851,9 @@ interface InvoiceCardProps {
 }
 
 function InvoiceCard({ data }: InvoiceCardProps) {
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+
   if (!data) return null;
 
   const distributor = data.distributor || {
@@ -870,24 +884,163 @@ function InvoiceCard({ data }: InvoiceCardProps) {
     return Number(num).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
+  const invoiceNo = data.invoice_id || "INV-OFFICIAL";
+  const firstItem = items[0] || {};
+  const itemDesc = firstItem.model ? `${firstItem.model} (Qty: ${firstItem.quantity || 1})` : "Hardware Solution";
+
+  // Dedicated Print / Save as PDF handler
+  const handlePrint = () => {
+    window.print();
+  };
+
+  // High-fidelity real PDF Download generator
+  const handleDownloadPdf = () => {
+    setIsExportingPdf(true);
+    try {
+      const { doc, fileName } = generateInvoicePdf(data);
+      doc.save(fileName);
+    } catch (err) {
+      console.error('PDF export failed, falling back to print', err);
+      window.print();
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
+  // Universal Share via WhatsApp with direct PDF file attachment & instant download
+  const handleShareWhatsApp = async () => {
+    const { whatsAppText, invoiceNo } = getInvoiceUniversalShareTemplates(data);
+
+    try {
+      const { doc, blob, fileName } = generateInvoicePdf(data);
+      const pdfFile = new File([blob], fileName, { type: 'application/pdf' });
+
+      // If browser supports Web Share API with files (Android, iOS, macOS, Windows 10/11)
+      if (typeof navigator !== 'undefined' && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+        try {
+          await navigator.share({
+            title: `TAX INVOICE - ${invoiceNo}`,
+            text: whatsAppText,
+            files: [pdfFile],
+          });
+          return;
+        } catch (shareErr: any) {
+          if (shareErr.name === 'AbortError') return;
+        }
+      }
+
+      // Universal fallback for desktop web: download PDF automatically and open WhatsApp Web
+      doc.save(fileName);
+      const encoded = encodeURIComponent(whatsAppText);
+      window.open(`https://api.whatsapp.com/send?text=${encoded}`, '_blank', 'noopener,noreferrer');
+    } catch (e) {
+      const encoded = encodeURIComponent(whatsAppText);
+      window.open(`https://api.whatsapp.com/send?text=${encoded}`, '_blank', 'noopener,noreferrer');
+    }
+  };
+
+  // Universal Share via Gmail with automatic PDF download & compose (CRLF formatted to avoid overlapping in Gmail)
+  const handleShareGmail = () => {
+    const { subject, gmailBody, customerEmail } = getInvoiceUniversalShareTemplates(data);
+
+    try {
+      const { doc, fileName } = generateInvoicePdf(data);
+      doc.save(fileName);
+    } catch (e) {}
+
+    const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(customerEmail || '')}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(gmailBody)}`;
+    const win = window.open(gmailUrl, '_blank', 'noopener,noreferrer');
+    if (!win || win.closed || typeof win.closed === 'undefined') {
+      window.location.href = `mailto:${encodeURIComponent(customerEmail || '')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(gmailBody)}`;
+    }
+  };
+
+  const handleCopyDetails = () => {
+    const { copySummary } = getInvoiceUniversalShareTemplates(data);
+    navigator.clipboard?.writeText(copySummary);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
+  };
+
   return (
     <div id="printable-invoice" className="mt-4 mb-6 w-full max-w-3xl bg-white border border-gray-300 shadow-xl rounded-xl overflow-hidden font-sans text-gray-800">
-      <div className="bg-slate-900 px-6 py-3.5 flex justify-between items-center text-white print:hidden">
+      {/* Header Action Bar with PDF, WhatsApp, Gmail, Print Controls */}
+      <div className="bg-slate-900 px-5 py-3 flex flex-wrap justify-between items-center gap-2 text-white print:hidden">
         <div className="flex items-center space-x-2.5">
           <span className="bg-emerald-600 text-white font-bold text-[11px] px-2.5 py-0.5 rounded tracking-wider uppercase">
             Official Tax Invoice
           </span>
-          <span className="text-gray-300 text-xs">Cloud Infotech Distribution • Verified Document</span>
+          <span className="text-gray-300 text-xs hidden sm:inline">Cloud Infotech Distribution • Ready for Export</span>
         </div>
-        <div className="flex items-center space-x-2">
+        
+        <div className="flex items-center flex-wrap gap-1.5">
+          {/* Download PDF Button */}
           <button
             type="button"
-            onClick={() => window.print()}
-            className="inline-flex items-center space-x-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-3.5 py-1.5 rounded-lg transition-colors shadow-sm cursor-pointer"
-            title="Print or Save as PDF"
+            onClick={handleDownloadPdf}
+            disabled={isExportingPdf}
+            className="inline-flex items-center space-x-1.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-all shadow-sm cursor-pointer"
+            title="Download or Save invoice as official PDF"
           >
-            <PrinterIcon className="w-4 h-4" />
-            <span>Print / Save PDF</span>
+            {isExportingPdf ? (
+              <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <ArrowDownTrayIcon className="w-3.5 h-3.5" />
+            )}
+            <span>{isExportingPdf ? 'Exporting...' : 'PDF'}</span>
+          </button>
+
+          {/* Print Button */}
+          <button
+            type="button"
+            onClick={handlePrint}
+            className="inline-flex items-center space-x-1.5 bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-all shadow-sm cursor-pointer"
+            title="Open native browser print dialog"
+          >
+            <PrinterIcon className="w-3.5 h-3.5" />
+            <span>Print</span>
+          </button>
+
+          {/* Share with WhatsApp */}
+          <button
+            type="button"
+            onClick={handleShareWhatsApp}
+            className="inline-flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-all shadow-sm cursor-pointer"
+            title="Share official invoice details via WhatsApp Web / App"
+          >
+            <ShareIcon className="w-3.5 h-3.5" />
+            <span>WhatsApp</span>
+          </button>
+
+          {/* Share with Gmail */}
+          <button
+            type="button"
+            onClick={handleShareGmail}
+            className="inline-flex items-center space-x-1.5 bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-all shadow-sm cursor-pointer"
+            title="Draft email with structured invoice via Gmail"
+          >
+            <EnvelopeIcon className="w-3.5 h-3.5" />
+            <span>Gmail</span>
+          </button>
+
+          {/* Copy Summary */}
+          <button
+            type="button"
+            onClick={handleCopyDetails}
+            className="inline-flex items-center space-x-1 bg-slate-800 hover:bg-slate-700 text-gray-300 hover:text-white text-xs px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer border border-slate-700"
+            title="Copy invoice summary to clipboard"
+          >
+            {copiedLink ? (
+              <>
+                <CheckIcon className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="text-emerald-400">Copied</span>
+              </>
+            ) : (
+              <>
+                <ClipboardDocumentIcon className="w-3.5 h-3.5" />
+                <span>Copy</span>
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -981,7 +1134,7 @@ function InvoiceCard({ data }: InvoiceCardProps) {
               </thead>
               <tbody className="divide-y divide-slate-200 bg-white">
                 {items.map((item: any, idx: number) => (
-                  <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                  <tr key={item.id || item.model || `item-${idx}`} className="hover:bg-slate-50 transition-colors">
                     <td className="px-3 py-3 text-center font-semibold text-slate-600 border-r border-slate-200">{idx + 1}</td>
                     <td className="px-3.5 py-3 border-r border-slate-200">
                       <p className="font-bold text-slate-900">{item.model}</p>
@@ -1058,7 +1211,7 @@ function InvoiceCard({ data }: InvoiceCardProps) {
   );
 }
 
-const QUICK_ACTIONS = [
+const DEFAULT_COMMERCIAL_ACTIONS = [
   {
     label: "Create Quotation",
     prompt: "I need to create a commercial Quotation"
@@ -1068,22 +1221,68 @@ const QUICK_ACTIONS = [
     prompt: "I need to generate a Tax Invoice"
   },
   {
-    label: "API Latency",
-    prompt: "Investigate our recent API latency."
+    label: "Show Recent Invoices",
+    prompt: "Show recent invoices on record"
   },
   {
-    label: "Indian Govt Holidays",
-    prompt: "What are the official Indian Government Gazetted holidays?"
+    label: "Show Recent Quotations",
+    prompt: "Show recent quotations on record"
   },
   {
-    label: "Current Day & Time",
-    prompt: "What day is today and what is the current time?"
+    label: "Hardware Catalog & Pricing",
+    prompt: "Show Cloud Infotech hardware catalog with pricing and warranty terms."
   },
   {
-    label: "Python API Script",
-    prompt: "Write a production Python script to fetch an API with retries."
+    label: "Check Current Invoices",
+    prompt: "Show me the current invoices on record"
   }
 ];
+
+function getDynamicSuggestions(messages: Message[]): { label: string; prompt: string }[] {
+  let lastCommercialType: 'invoice' | 'quotation' | null = null;
+  let lastCompany: string | null = null;
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const c = messages[i]?.content || '';
+    if (c.includes('invoice_id') || c.includes('Tax Invoice') || c.includes('Official Tax Invoice')) {
+      lastCommercialType = 'invoice';
+      const m = c.match(/(?:for|\*\*Billed To:\*\*|billed_to|Client Company \/ Billed To:|Client \/ Billed To:)\s*\*?\*?([A-Za-z0-9\s&.-]{2,30}?)(?:\*?\*|\(|`|\n|,|$)/i);
+      if (m && m[1]) lastCompany = m[1].trim();
+      break;
+    }
+    if (c.includes('quotation_id') || c.includes('Commercial Quotation') || c.includes('Official Commercial Quotation')) {
+      lastCommercialType = 'quotation';
+      const m = c.match(/(?:for|\*\*Proposed To:\*\*|company_name|Proposed To:|Client Company:)\s*\*?\*?([A-Za-z0-9\s&.-]{2,30}?)(?:\*?\*|\(|`|\n|,|$)/i);
+      if (m && m[1]) lastCompany = m[1].trim();
+      break;
+    }
+  }
+
+  // Follow-up suggestions when previous response was an invoice
+  if (lastCommercialType === 'invoice' && lastCompany) {
+    return [
+      { label: `Show ${lastCompany} Invoice`, prompt: `sHOW ME the ${lastCompany} current invoice` },
+      { label: `Invoice Date & Due Date`, prompt: `when was ${lastCompany} invoice created?` },
+      { label: `What did ${lastCompany} buy?`, prompt: `what did ${lastCompany} buy?` },
+      { label: `Create Quotation for ${lastCompany}`, prompt: `I need to create a commercial Quotation for ${lastCompany}` },
+      { label: "Create New Tax Invoice", prompt: "I need to generate a Tax Invoice" },
+      { label: "Hardware Catalog", prompt: "Show Cloud Infotech hardware catalog with pricing and warranty terms." }
+    ];
+  }
+
+  // Follow-up suggestions when previous response was a quotation
+  if (lastCommercialType === 'quotation' && lastCompany) {
+    return [
+      { label: `Convert to Invoice for ${lastCompany}`, prompt: `Generate official tax invoice for ${lastCompany}` },
+      { label: `Quotation Date & Validity`, prompt: `when was quotation created for ${lastCompany}?` },
+      { label: `Show ${lastCompany} Quotation`, prompt: `Show quotation for ${lastCompany}` },
+      { label: "Create New Quotation", prompt: "I need to create a commercial Quotation" },
+      { label: "Hardware Catalog", prompt: "Show Cloud Infotech hardware catalog with pricing and warranty terms." }
+    ];
+  }
+
+  return DEFAULT_COMMERCIAL_ACTIONS;
+}
 
 const renderMessageContent = (content: string, onSend?: (text: string) => void, isLoading?: boolean) => {
   if (!content) return null;
@@ -1128,7 +1327,7 @@ const renderMessageContent = (content: string, onSend?: (text: string) => void, 
     // 2. Check for official Tax Invoice
     if (content.includes('invoice_id')) {
       let invoiceData: any = null;
-      const jsonBlockMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
+      const jsonBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
       if (jsonBlockMatch) {
         try {
           const parsed = JSON.parse(jsonBlockMatch[1]);
@@ -1136,31 +1335,32 @@ const renderMessageContent = (content: string, onSend?: (text: string) => void, 
         } catch (e) {}
       }
 
-      const extractJsonFromKeyword = (keyword: string) => {
-        const idx = content.indexOf(keyword);
-        if (idx === -1) return null;
-        const sub = content.substring(idx, Math.min(content.length, idx + 3500));
-        const start = sub.indexOf('{');
-        if (start === -1) return null;
-        let braceCount = 0, inString = false, escapeNext = false, jsonStr = '';
-        for (let i = start; i < sub.length; i++) {
-          const char = sub[i];
-          jsonStr += char;
-          if (!escapeNext && char === '"') inString = !inString;
-          if (!inString) {
-            if (char === '{') braceCount++;
-            else if (char === '}') braceCount--;
-          }
-          escapeNext = (!escapeNext && char === '\\');
-          if (braceCount === 0 && jsonStr.length > 0) {
-            try { return JSON.parse(jsonStr); } catch (e) { return null; }
+      if (!invoiceData) {
+        const invIdx = content.indexOf('invoice_id');
+        if (invIdx !== -1) {
+          const braceStart = content.lastIndexOf('{', invIdx);
+          if (braceStart !== -1) {
+            let braceCount = 0, inString = false, escapeNext = false;
+            for (let i = braceStart; i < content.length; i++) {
+              const char = content[i];
+              if (!escapeNext && char === '"') inString = !inString;
+              if (!inString) {
+                if (char === '{') braceCount++;
+                else if (char === '}') braceCount--;
+              }
+              escapeNext = (!escapeNext && char === '\\');
+              if (braceCount === 0 && i > braceStart) {
+                try {
+                  const candidate = JSON.parse(content.substring(braceStart, i + 1));
+                  if (candidate && candidate.invoice_id) {
+                    invoiceData = candidate;
+                    break;
+                  }
+                } catch (e) {}
+              }
+            }
           }
         }
-        return null;
-      };
-
-      if (!invoiceData) {
-        invoiceData = extractJsonFromKeyword('invoice.generate') || extractJsonFromKeyword('invoice_id');
       }
 
       if (invoiceData && invoiceData.invoice_id) {
@@ -1172,6 +1372,41 @@ const renderMessageContent = (content: string, onSend?: (text: string) => void, 
     let custData: any = null;
 
     if (content.includes('quotation_id')) {
+      const jsonBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+      if (jsonBlockMatch) {
+        try {
+          const parsed = JSON.parse(jsonBlockMatch[1]);
+          if (parsed && parsed.quotation_id) quoteData = parsed;
+        } catch (e) {}
+      }
+
+      if (!quoteData) {
+        const qIdx = content.indexOf('quotation_id');
+        if (qIdx !== -1) {
+          const braceStart = content.lastIndexOf('{', qIdx);
+          if (braceStart !== -1) {
+            let braceCount = 0, inString = false, escapeNext = false;
+            for (let i = braceStart; i < content.length; i++) {
+              const char = content[i];
+              if (!escapeNext && char === '"') inString = !inString;
+              if (!inString) {
+                if (char === '{') braceCount++;
+                else if (char === '}') braceCount--;
+              }
+              escapeNext = (!escapeNext && char === '\\');
+              if (braceCount === 0 && i > braceStart) {
+                try {
+                  const candidate = JSON.parse(content.substring(braceStart, i + 1));
+                  if (candidate && candidate.quotation_id) {
+                    quoteData = candidate;
+                    break;
+                  }
+                } catch (e) {}
+              }
+            }
+          }
+        }
+      }
       const extractJsonBraces = (keyword: string) => {
         const idx = content.indexOf(keyword);
         if (idx === -1) return null;
@@ -1261,21 +1496,122 @@ const renderMessageContent = (content: string, onSend?: (text: string) => void, 
 
       return (
         <div id="printable-quotation" className="mt-4 mb-4 w-full max-w-2xl bg-white border border-gray-300 shadow-md rounded-xl overflow-hidden font-sans text-gray-800">
-          {/* Header Action Bar */}
-          <div className="bg-slate-900 px-6 py-3.5 flex justify-between items-center text-white print:hidden">
+          {/* Header Action Bar with PDF, Print, WhatsApp, and Gmail Controls */}
+          <div className="bg-slate-900 px-5 py-3 flex flex-wrap justify-between items-center gap-2 text-white print:hidden">
             <div className="flex items-center space-x-2">
               <span className="bg-blue-600 text-white font-bold text-[11px] px-2.5 py-0.5 rounded tracking-wider uppercase">Official Commercial Quotation</span>
-              <span className="text-gray-300 text-xs">Cloud Infotech Distribution • Ready for Print / PDF</span>
+              <span className="text-gray-300 text-xs hidden sm:inline">Cloud Infotech Distribution • Ready for Export</span>
             </div>
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="inline-flex items-center space-x-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors shadow-sm cursor-pointer"
-              title="Print or Save as PDF"
-            >
-              <PrinterIcon className="w-3.5 h-3.5" />
-              <span>Print Quotation</span>
-            </button>
+            
+            <div className="flex items-center flex-wrap gap-1.5">
+              {/* PDF Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    const { doc, fileName } = generateQuotationPdf(quoteData);
+                    doc.save(fileName);
+                  } catch (err) {
+                    window.print();
+                  }
+                }}
+                className="inline-flex items-center space-x-1.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-all shadow-sm cursor-pointer"
+                title="Download or Save quotation as official PDF"
+              >
+                <ArrowDownTrayIcon className="w-3.5 h-3.5" />
+                <span>PDF</span>
+              </button>
+
+              {/* Print Button */}
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="inline-flex items-center space-x-1.5 bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-all shadow-sm cursor-pointer"
+                title="Open browser print dialog"
+              >
+                <PrinterIcon className="w-3.5 h-3.5" />
+                <span>Print</span>
+              </button>
+
+              {/* WhatsApp Share Button with Direct PDF Sharing & Download */}
+              <button
+                type="button"
+                onClick={async () => {
+                  const { whatsAppText, quoteNo } = getQuotationUniversalShareTemplates(quoteData);
+
+                  try {
+                    const { doc, blob, fileName } = generateQuotationPdf(quoteData);
+                    const pdfFile = new File([blob], fileName, { type: 'application/pdf' });
+
+                    if (typeof navigator !== 'undefined' && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+                      try {
+                        await navigator.share({
+                          title: `COMMERCIAL QUOTATION - ${quoteNo}`,
+                          text: whatsAppText,
+                          files: [pdfFile],
+                        });
+                        return;
+                      } catch (shareErr: any) {
+                        if (shareErr.name === 'AbortError') return;
+                      }
+                    }
+
+                    // Automatic fallback: save PDF file to disk and launch WhatsApp Web
+                    doc.save(fileName);
+                    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(whatsAppText)}`, '_blank', 'noopener,noreferrer');
+                  } catch (e) {
+                    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(whatsAppText)}`, '_blank', 'noopener,noreferrer');
+                  }
+                }}
+                className="inline-flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-all shadow-sm cursor-pointer"
+                title="Share quotation & PDF via WhatsApp"
+              >
+                <ShareIcon className="w-3.5 h-3.5" />
+                <span>WhatsApp</span>
+              </button>
+
+              {/* Gmail Share Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  const { subject, gmailBody, customerEmail } = getQuotationUniversalShareTemplates(quoteData);
+
+                  try {
+                    const { doc, fileName } = generateQuotationPdf(quoteData);
+                    doc.save(fileName);
+                  } catch (e) {}
+
+                  const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(customerEmail || '')}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(gmailBody)}`;
+                  const win = window.open(gmailUrl, '_blank', 'noopener,noreferrer');
+                  if (!win || win.closed || typeof win.closed === 'undefined') {
+                    window.location.href = `mailto:${encodeURIComponent(customerEmail || '')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(gmailBody)}`;
+                  }
+                }}
+                className="inline-flex items-center space-x-1.5 bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-all shadow-sm cursor-pointer"
+                title="Share quotation via Gmail"
+              >
+                <EnvelopeIcon className="w-3.5 h-3.5" />
+                <span>Gmail</span>
+              </button>
+
+              {/* Copy Summary */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  const { copySummary } = getQuotationUniversalShareTemplates(quoteData);
+                  navigator.clipboard?.writeText(copySummary);
+                  const btn = e.currentTarget;
+                  const original = btn.innerText;
+                  btn.innerText = 'Copied!';
+                  setTimeout(() => { btn.innerText = original; }, 2000);
+                }}
+                className="inline-flex items-center space-x-1 bg-slate-800 hover:bg-slate-700 text-gray-300 hover:text-white text-xs px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer border border-slate-700"
+                title="Copy quotation summary to clipboard"
+              >
+                <ClipboardDocumentIcon className="w-3.5 h-3.5" />
+                <span>Copy</span>
+              </button>
+            </div>
           </div>
 
           <div className="p-7 space-y-6">
@@ -1339,7 +1675,7 @@ const renderMessageContent = (content: string, onSend?: (text: string) => void, 
                   </thead>
                   <tbody className="divide-y divide-slate-200 bg-white">
                     {itemsList.map((item: any, idx: number) => (
-                      <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                      <tr key={item.id || item.model || `item-line-${idx}`} className="hover:bg-slate-50 transition-colors">
                         <td className="px-3.5 py-3 text-center font-semibold text-slate-900 border-r border-slate-200">{item.quantity}</td>
                         <td className="px-3.5 py-3 border-r border-slate-200">
                           <p className="font-bold text-slate-900">{item.model || quoteData.model || 'DINSTAR Hardware'}</p>
@@ -1554,6 +1890,15 @@ export default function ConversationsPage() {
 
   useEffect(() => {
     loadConversations();
+
+    // Check if search query parameter 'q' was passed from global search or company agent
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const queryParam = urlParams.get('q');
+      if (queryParam && queryParam.trim()) {
+        setInput(queryParam.trim());
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -1770,7 +2115,7 @@ export default function ConversationsPage() {
         <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Conversations</h1>
         <p className="text-xs sm:text-sm text-gray-500 mt-0.5">Interact with AURA or review past AI task threads.</p>
       </div>
-      <div className="flex flex-1 min-h-0 overflow-hidden border border-gray-200 rounded-xl bg-white shadow-sm">
+      <div className="flex flex-1 min-h-0 overflow-hidden border border-border rounded-2xl bg-card shadow-sm">
       {/* Left Sidebar */}
       <div className="w-80 border-r border-gray-200 flex flex-col bg-gray-50/50">
         <div className="p-4 border-b border-gray-200">
@@ -1825,13 +2170,14 @@ export default function ConversationsPage() {
                 <p className="mt-2 text-gray-500">Select a prompt below to get started or type your own request.</p>
               </div>
               <div className="grid grid-cols-2 gap-4 w-full">
-                {QUICK_ACTIONS.map((action, i) => (
+                {getDynamicSuggestions(messages).map((action, i) => (
                   <button
-                    key={i}
+                    key={action.label || action.prompt || `qa-${i}`}
                     onClick={() => handleSend(action.prompt)}
-                    className="p-4 text-sm text-gray-700 bg-white border border-gray-200 rounded-xl hover:border-blue-300 hover:shadow-md transition-all text-left shadow-sm"
+                    className="p-4 text-sm text-gray-700 bg-white border border-gray-200 rounded-xl hover:border-blue-300 hover:shadow-md transition-all text-left shadow-sm flex flex-col justify-between"
                   >
-                    {action.prompt}
+                    <span className="font-semibold text-gray-900 mb-1">{action.label}</span>
+                    <span className="text-xs text-gray-500">{action.prompt}</span>
                   </button>
                 ))}
               </div>
@@ -1900,11 +2246,13 @@ export default function ConversationsPage() {
           {/* Active Conversation Quick Actions */}
           {activeId && (
             <div className="mx-auto max-w-4xl mb-2.5">
-              <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Quick actions</div>
+              <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                {messages.some(m => m.content.includes('invoice_id') || m.content.includes('quotation_id')) ? 'Commercial Follow-ups' : 'Quick actions'}
+              </div>
               <div className="flex flex-wrap gap-1.5 pb-0.5">
-                {QUICK_ACTIONS.map((action, i) => (
+                {getDynamicSuggestions(messages).map((action, i) => (
                   <button
-                    key={i}
+                    key={action.label || action.prompt || `qa-${i}`}
                     onClick={() => handleSend(action.prompt)}
                     disabled={isLoading || !!pendingApproval}
                     className="rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-colors shadow-xs disabled:opacity-50 whitespace-nowrap cursor-pointer"

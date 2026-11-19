@@ -47,6 +47,25 @@ from app.database.base import Base
 _UUID_TYPE = sa.Uuid(as_uuid=True)
 _JSON_TYPE = sa.JSON().with_variant(sa.dialects.postgresql.JSONB(), "postgresql")
 
+from sqlalchemy.dialects.postgresql import TSVECTOR
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.schema import Computed
+
+
+@compiles(TSVECTOR, "sqlite")
+def _compile_tsvector_sqlite(type_, compiler, **kw):
+    return "TEXT"
+
+
+@compiles(Vector, "sqlite")
+def _compile_vector_sqlite(type_, compiler, **kw):
+    return "TEXT"
+
+
+@compiles(Computed, "sqlite")
+def _compile_computed_sqlite(element, compiler, **kw):
+    return ""
+
 
 class TimestampMixin:
     created_at: Mapped[datetime] = mapped_column(
@@ -178,6 +197,7 @@ class ApprovalStatus(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
     DENIED = "denied"
+    EXECUTED = "executed"
     EXPIRED = "expired"
 
 
@@ -487,7 +507,9 @@ class AgentRun(TimestampMixin, Base):
     completed_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
 
     # Input
-    legal_hold: Mapped[bool] = mapped_column(sa.Boolean, server_default=sa.text("false"), nullable=False)
+    legal_hold: Mapped[bool] = mapped_column(
+        sa.Boolean, server_default=sa.text("false"), nullable=False
+    )
     user_request: Mapped[str] = mapped_column(
         Text,
         nullable=False,
@@ -1231,3 +1253,43 @@ class OutboxEvent(TimestampMixin, Base):
     payload: Mapped[dict[str, Any]] = mapped_column(_JSON_TYPE, default=dict, nullable=False)
     status: Mapped[str] = mapped_column(String(50), default="pending", nullable=False, index=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class IntegrationCredential(TimestampMixin, Base):
+    __tablename__ = "integration_credentials"
+
+    id: Mapped[uuid.UUID] = mapped_column(_UUID_TYPE, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    credential_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    encrypted_payload: Mapped[bytes] = mapped_column(sa.LargeBinary, nullable=False)
+    header_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    __table_args__ = (
+        sa.UniqueConstraint("organization_id", "name", name="uq_org_credential_name"),
+    )
+
+
+class ExternalToolEndpoint(TimestampMixin, Base):
+    __tablename__ = "external_tool_endpoints"
+
+    id: Mapped[uuid.UUID] = mapped_column(_UUID_TYPE, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    protocol: Mapped[str] = mapped_column(String(20), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    base_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    manifest_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    manifest_data: Mapped[dict[str, Any] | None] = mapped_column(_JSON_TYPE, nullable=True)
+    credential_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("integration_credentials.id", ondelete="SET NULL"), nullable=True
+    )
+    is_active: Mapped[bool] = mapped_column(sa.Boolean, default=True, nullable=False)
+    health_status: Mapped[str] = mapped_column(String(20), default="unknown", nullable=False)
+
+    credential: Mapped[IntegrationCredential | None] = relationship("IntegrationCredential")
+
+    __table_args__ = (sa.UniqueConstraint("organization_id", "name", name="uq_org_endpoint_name"),)

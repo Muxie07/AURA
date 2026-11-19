@@ -1,10 +1,137 @@
+import json
+import os
+import tempfile
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
 from app.tools.executor import InternalToolExecutor
 from app.tools.schemas import RiskLevel, ToolContext, ToolDefinition
+
+INVOICES_STORE_FILE = os.path.join(tempfile.gettempdir(), "aura_invoices_store.json")
+
+
+def _get_redis_sync():
+    try:
+        import redis
+
+        from app.config.settings import get_settings
+
+        return redis.from_url(get_settings().redis_url, socket_timeout=1.0)
+    except Exception:
+        return None
+
+
+def _load_stored_invoices() -> list[dict[str, Any]]:
+    # Try Redis first
+    r = _get_redis_sync()
+    if r:
+        try:
+            raw = r.get("aura:stored_invoices")
+            if raw:
+                loaded = json.loads(raw)
+                if isinstance(loaded, list) and len(loaded) > 0:
+                    return loaded
+        except Exception:
+            pass
+    # Fallback to local temp file
+    if os.path.exists(INVOICES_STORE_FILE):
+        try:
+            with open(INVOICES_STORE_FILE, encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
+
+
+def _write_stored_invoices(invoices: list[dict[str, Any]]) -> None:
+    # Save to Redis
+    r = _get_redis_sync()
+    if r:
+        try:
+            r.set("aura:stored_invoices", json.dumps(invoices))
+        except Exception:
+            pass
+    # Save to local file
+    try:
+        with open(INVOICES_STORE_FILE, "w", encoding="utf-8") as f:
+            json.dump(invoices, f, indent=2)
+    except Exception:
+        pass
+
+
+def save_generated_invoice(invoice: dict[str, Any]) -> None:
+    try:
+        invs = _load_stored_invoices()
+        invs = [i for i in invs if i.get("invoice_id") != invoice.get("invoice_id")]
+        invs.insert(0, invoice)
+        _write_stored_invoices(invs[:100])
+    except Exception:
+        pass
+    try:
+        from app.tools.builtin.commercial_kb import sync_ingest_invoice
+
+        sync_ingest_invoice(invoice)
+    except Exception:
+        pass
+
+
+def find_stored_invoice(query: str = "") -> dict[str, Any] | None:
+    invs = _load_stored_invoices()
+    if not invs:
+        return None
+    q = (query or "").strip().lower()
+    if not q or q in ("current", "latest", "recent", "last", "invoice", "tax invoice"):
+        return invs[0]
+
+    # Clean query from generic noise words
+    noise = [
+        "show",
+        "me",
+        "the",
+        "current",
+        "invoice",
+        "tax",
+        "for",
+        "please",
+        "get",
+        "fetch",
+        "view",
+        "what",
+        "is",
+        "where",
+    ]
+    clean_parts = [w for w in q.split() if w not in noise]
+    clean_q = " ".join(clean_parts).strip() if clean_parts else q
+
+    for inv in invs:
+        comp_name = inv.get("billed_to", {}).get("name", "").lower()
+        inv_id = inv.get("invoice_id", "").lower()
+        if (
+            (clean_q and clean_q in comp_name)
+            or (comp_name and comp_name in clean_q)
+            or clean_q in inv_id
+        ):
+            return inv
+
+    for inv in invs:
+        comp_name = inv.get("billed_to", {}).get("name", "").lower()
+        if any(part in comp_name for part in clean_parts if len(part) > 1):
+            return inv
+
+    # Fallback to model match
+    for inv in invs:
+        for it in inv.get("items", []):
+            if clean_q and clean_q in it.get("model", "").lower():
+                return inv
+
+    # If asking for "current" or "latest" or only 1 exists, return the newest
+    if any(k in q for k in ["current", "latest", "recent", "last", "today"]) or len(invs) == 1:
+        return invs[0]
+
+    return invs[0]
+
 
 # Cloud Infotech Catalog based on Distribution Price List
 CLOUD_INFOTECH_CATALOG = {
@@ -211,7 +338,9 @@ MOCK_COMPANIES = {
 }
 
 
-async def invoice_generate_handler(arguments: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+async def invoice_generate_handler(
+    arguments: dict[str, Any], context: ToolContext
+) -> dict[str, Any]:
     company_query = arguments.get("company_name", "Acme Technologies").strip()
     model_query = arguments.get("model_number", "UC-2000-VE-4T").strip()
     qty = max(1, int(arguments.get("quantity", 1)))
@@ -232,12 +361,17 @@ async def invoice_generate_handler(arguments: dict[str, Any], context: ToolConte
             "contact": "+91 98765 43210",
         }
 
-    # Find product in catalog
+    # Find product in catalog (exact match first, then longest matching key)
     matched_product = None
     for key, p in CLOUD_INFOTECH_CATALOG.items():
-        if key.lower() in model_query.lower() or model_query.lower() in key.lower():
+        if key.lower() == model_query.lower():
             matched_product = p
             break
+    if not matched_product:
+        for key in sorted(CLOUD_INFOTECH_CATALOG.keys(), key=len, reverse=True):
+            if key.lower() in model_query.lower() or model_query.lower() in key.lower():
+                matched_product = CLOUD_INFOTECH_CATALOG[key]
+                break
     if not matched_product:
         # Default fallback product from catalog
         matched_product = CLOUD_INFOTECH_CATALOG["UC-2000-VE-4T"]
@@ -259,13 +393,22 @@ async def invoice_generate_handler(arguments: dict[str, Any], context: ToolConte
     gst_18 = round(subtotal * 0.18, 2)
     grand_total = round(subtotal + gst_18, 2)
 
-    now = datetime.now(timezone.utc)
+    now_utc = datetime.now(UTC)
+    now_ist = now_utc + timedelta(hours=5, minutes=30)
+    created_at = now_ist.isoformat()
+    created_date_formatted = now_ist.strftime("%A, %d %B %Y, %I:%M %p") + " IST"
+    inv_date = now_ist.strftime("%d.%m.%Y")
+    due_date = (now_ist + timedelta(days=30)).strftime("%d.%m.%Y")
+    due_date_formatted = (now_ist + timedelta(days=30)).strftime("%d %B %Y")
     inv_id = f"INV-2026-CI-{uuid.uuid4().hex[:6].upper()}"
 
     invoice_data = {
         "invoice_id": inv_id,
-        "invoice_date": now.strftime("%d.%m.%Y"),
-        "due_date": (now + timedelta(days=30)).strftime("%d.%m.%Y"),
+        "created_at": created_at,
+        "created_date_formatted": created_date_formatted,
+        "invoice_date": inv_date,
+        "due_date": due_date,
+        "due_date_formatted": due_date_formatted,
         "distributor": {
             "name": "Cloud Infotech Distribution Pvt. Ltd.",
             "subtitle": "Authorized Dinstar National Distributor",
@@ -305,6 +448,7 @@ async def invoice_generate_handler(arguments: dict[str, Any], context: ToolConte
         ],
         "status": "APPROVED",
     }
+    save_generated_invoice(invoice_data)
     return invoice_data
 
 
@@ -315,7 +459,10 @@ invoice_generate_def = ToolDefinition(
         "type": "object",
         "properties": {
             "company_name": {"type": "string", "description": "Customer company name"},
-            "model_number": {"type": "string", "description": "Product model number from Cloud Infotech catalog"},
+            "model_number": {
+                "type": "string",
+                "description": "Product model number from Cloud Infotech catalog",
+            },
             "quantity": {"type": "integer", "description": "Quantity to order", "default": 1},
             "price_tier": {
                 "type": "string",

@@ -23,30 +23,81 @@ class RetrieveNode(BaseNode):
         # Domain knowledge keywords that warrant searching the enterprise knowledge base
         req_lower = state.original_request.lower().strip()
         KNOWLEDGE_KEYWORDS = [
-            "cloud infotech", "dinstar", "price list", "pricelist", "rate card",
-            "catalog", "hardware", "gateway", "fxs", "fxo", "gsm", "volte",
-            "ip pbx", "ippbx", "sbc", "session border", "transcoding",
-            "quotation", "quote", "invoice", "bill", "billing",
-            "warranty", "freight", "dispatch", "payment terms", "credit period",
-            "sla", "p1", "incident", "runbook", "latency", "observability",
-            "procedure", "support policy"
+            "cloud infotech",
+            "dinstar",
+            "price list",
+            "pricelist",
+            "rate card",
+            "catalog",
+            "hardware",
+            "gateway",
+            "fxs",
+            "fxo",
+            "gsm",
+            "volte",
+            "ip pbx",
+            "ippbx",
+            "sbc",
+            "session border",
+            "transcoding",
+            "quotation",
+            "quote",
+            "invoice",
+            "bill",
+            "billing",
+            "warranty",
+            "freight",
+            "dispatch",
+            "payment terms",
+            "credit period",
+            "sla",
+            "p1",
+            "incident",
+            "runbook",
+            "latency",
+            "observability",
+            "procedure",
+            "support policy",
+            "pcs",
+            "acme",
+            "client",
+            "commercial",
+            "order",
+            "purchase",
+            "customer",
         ]
 
         from app.ai.knowledge.adaptive_engine import AdaptiveEngine
+
         # If the request matches general adaptive engine OR is not a domain knowledge query,
         # skip RAG retrieval completely to avoid polluting context with irrelevant document chunks.
-        if (
-            AdaptiveEngine.evaluate(state.original_request) is not None
-            or not any(kw in req_lower for kw in KNOWLEDGE_KEYWORDS)
+        if AdaptiveEngine.evaluate(state.original_request) is not None or not any(
+            kw in req_lower for kw in KNOWLEDGE_KEYWORDS
         ):
             state.status = AgentNodeState.UNDERSTANDING
             return state
 
+        import asyncio
+
+        # If tools are already planned (e.g. invoice.generate, quotation.create_draft),
+        # skip RAG retrieval because structured tool execution will supply exact authoritative data.
+        if state.plan and state.plan.steps:
+            planned_tools = [s.type for s in state.plan.steps]
+            if any(
+                t in planned_tools
+                for t in ["invoice.generate", "quotation.create_draft", "pricing.calculate"]
+            ):
+                state.status = AgentNodeState.UNDERSTANDING
+                return state
+
         try:
-            rag_response = await self.rag.query(
-                organization_id=state.organization_id,
-                knowledge_base_id=None,
-                question=state.original_request,
+            rag_response = await asyncio.wait_for(
+                self.rag.query(
+                    organization_id=state.organization_id,
+                    knowledge_base_id=None,
+                    question=state.original_request,
+                ),
+                timeout=4.0,
             )
 
             if rag_response.sources:

@@ -148,6 +148,7 @@ async def initialize_database() -> None:
     """
     global _engine, _session_factory
 
+    settings = get_settings()
     logger.info("Initializing database connection pool.")
     _engine = create_engine()
     _session_factory = async_sessionmaker(
@@ -166,8 +167,25 @@ async def initialize_database() -> None:
             await conn.execute(text("SELECT 1"))
         logger.info("Database connection verified.")
     except Exception as exc:
-        logger.error("Database connection failed.", error=str(exc))
-        raise
+        if settings.is_development:
+            logger.warning("postgres_unreachable_falling_back_to_sqlite", error=str(exc))
+            sqlite_url = "sqlite+aiosqlite:///aura_dev.db"
+            _engine = create_async_engine(sqlite_url, echo=False)
+            _session_factory = async_sessionmaker(
+                bind=_engine,
+                class_=AsyncSession,
+                expire_on_commit=False,
+                autoflush=False,
+                autocommit=False,
+            )
+            async with _engine.begin() as conn:
+                from app.database.models import Base
+
+                await conn.run_sync(Base.metadata.create_all)
+            logger.info("sqlite_fallback_initialized_successfully")
+        else:
+            logger.error("Database connection failed.", error=str(exc))
+            raise
 
 
 async def close_database() -> None:

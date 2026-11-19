@@ -13,7 +13,7 @@ from app.database.models import (
     AgentRunStatus,
     Customer,
     Organization,
-    User,
+    User, UserRole,
 )
 
 settings = get_settings()
@@ -26,6 +26,8 @@ def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 async def seed_data():
+    from app.database.base import initialize_database
+    await initialize_database()
     SessionFactory = get_session_factory()
     demo_pass = os.environ.get("AURA_DEMO_PASSWORD", "demo1234")
     hashed_pass = hash_password(demo_pass)
@@ -60,7 +62,7 @@ async def seed_data():
             if not u:
                 u = User(
                     id=uuid.uuid4(), organization_id=org.id, email=email,
-                    full_name=name, is_active=True, is_superuser=is_super, metadata_={},
+                    full_name=name, is_active=True, role=UserRole.ADMIN if is_super else UserRole.MEMBER, metadata_={},
                     hashed_password=hashed_pass
                 )
                 db.add(u)

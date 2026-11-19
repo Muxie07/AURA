@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 import structlog
@@ -95,6 +96,7 @@ QUOTATION_SELECTOR_PAYLOAD = """<!-- QUOTATION_SELECTOR_START -->
   "support": "24*7 Technical Support"
 }
 <!-- QUOTATION_SELECTOR_END -->"""
+
 
 def _generate_structured_response(state: AgentState) -> str:
     """
@@ -206,7 +208,7 @@ def _generate_structured_response(state: AgentState) -> str:
                     f"Tax invoice **{result['invoice_id']}** has been generated for **{comp}** "
                     f"according to the Cloud Infotech Distribution Price List (18% GST & 3 Years Warranty).\n"
                 )
-                lines.append(f"**invoice.generate result:**")
+                lines.append("**invoice.generate result:**")
                 lines.append(json.dumps(result, indent=2))
             else:
                 lines.append(f"**{tool_name} result:**")
@@ -224,8 +226,26 @@ def _generate_structured_response(state: AgentState) -> str:
                     f"Quotation **{result['quotation_id']}** has been prepared for **{comp}** "
                     f"covering **{model}** with a 30-day validity guarantee and 3 Years Warranty.\n"
                 )
-                lines.append(f"**quotation.create_draft result:**")
+                lines.append("**quotation.create_draft result:**")
                 lines.append(json.dumps(result, indent=2))
+            else:
+                lines.append(f"**{tool_name} result:**")
+                try:
+                    lines.append(json.dumps(result, indent=2))
+                except Exception:
+                    lines.append(str(result))
+
+        elif tool_name == "communication.send_quotation":
+            if isinstance(result, dict) and "quotation_id" in result:
+                comp = result.get("company_name", "Client")
+                lines.append("### Authorized Commercial Quotation Dispatched")
+                lines.append(
+                    f"Quotation **{result['quotation_id']}** has been officially dispatched to **{result.get('recipient')}** "
+                    f"({comp}) for total value **${result.get('total_value')}**.\n"
+                )
+                lines.append(
+                    f"**Delivery Status:** {result.get('delivery_status', 'DELIVERED')} via {result.get('delivery_channel', 'AURA Verified Delivery Outbox')}"
+                )
             else:
                 lines.append(f"**{tool_name} result:**")
                 try:
@@ -278,6 +298,7 @@ class DecisionNode(BaseNode):
                 )
 
             from app.ai.knowledge.adaptive_engine import AdaptiveEngine
+
             now_ist = AdaptiveEngine.get_current_ist_time()
             now_str = now_ist.strftime("%A, %d %B %Y %I:%M %p IST")
 
@@ -330,21 +351,61 @@ class DecisionNode(BaseNode):
                     if adaptive_ans:
                         final_text = adaptive_ans
                         await redis_client.publish(f"run_stream_{state.run_id}", final_text)
-                    elif any(w in req_lower for w in ["invoice", "create invoice", "generate invoice", "need an invoice", "need invoice", "give invoice", "bill"]):
+                    elif any(
+                        w in req_lower
+                        for w in [
+                            "invoice",
+                            "create invoice",
+                            "generate invoice",
+                            "need an invoice",
+                            "need invoice",
+                            "give invoice",
+                            "bill",
+                        ]
+                    ):
                         final_text = (
                             "I can help you generate an official Tax Invoice based on the **Cloud Infotech Distribution Price List**.\n\n"
                             "Please select the target company, hardware model, and pricing tier below:\n\n"
                             + INVOICE_SELECTOR_PAYLOAD
                         )
                         await redis_client.publish(f"run_stream_{state.run_id}", final_text)
-                    elif any(w in req_lower for w in ["quotation", "create quotation", "generate quotation", "need quotation", "need a quotation", "draft quotation", "give quotation", "quote"]):
+                    elif any(
+                        w in req_lower
+                        for w in [
+                            "quotation",
+                            "create quotation",
+                            "generate quotation",
+                            "need quotation",
+                            "need a quotation",
+                            "draft quotation",
+                            "give quotation",
+                            "quote",
+                        ]
+                    ):
                         final_text = (
                             "I can help you create an official commercial Quotation based on our hardware catalog and rate card.\n\n"
                             "Please select the product from our catalog and enter client company details below:\n\n"
                             + QUOTATION_SELECTOR_PAYLOAD
                         )
                         await redis_client.publish(f"run_stream_{state.run_id}", final_text)
-                    elif state.retrieved_context and any(kw in req_lower for kw in ["cloud infotech", "price list", "catalog", "policy", "support", "sla", "p1", "incident", "runbook", "latency", "dinstar", "procedure", "hardware"]):
+                    elif state.retrieved_context and any(
+                        kw in req_lower
+                        for kw in [
+                            "cloud infotech",
+                            "price list",
+                            "catalog",
+                            "policy",
+                            "support",
+                            "sla",
+                            "p1",
+                            "incident",
+                            "runbook",
+                            "latency",
+                            "dinstar",
+                            "procedure",
+                            "hardware",
+                        ]
+                    ):
                         top_ctx = state.retrieved_context[0]
                         final_text = (
                             f"Based on the indexed documentation:\n\n"
@@ -363,9 +424,7 @@ class DecisionNode(BaseNode):
                     if adaptive_ans:
                         final_text = adaptive_ans
                     else:
-                        final_text = (
-                            "I am ready to assist you. You can ask for an official Quotation, Tax Invoice, Indian Government Holidays, Date & Time, Climate information, or Python coding."
-                        )
+                        final_text = "I am ready to assist you. You can ask for an official Quotation, Tax Invoice, Indian Government Holidays, Date & Time, Climate information, or Python coding."
                 state.final_response = final_text
                 state.status = AgentNodeState.COMPLETED
             except Exception as e:
@@ -441,7 +500,6 @@ class DecisionNode(BaseNode):
 
                 redis_client = aioredis.from_url(get_settings().redis_url, socket_timeout=2.0)
 
-
                 final_text = ""
                 try:
                     if state.action_history:
@@ -449,9 +507,10 @@ class DecisionNode(BaseNode):
                         structured = _generate_structured_response(state)
                         if structured:
                             final_text = structured
-                            await redis_client.publish(
-                                f"run_stream_{state.run_id}", structured
-                            )
+                            try:
+                                await redis_client.publish(f"run_stream_{state.run_id}", structured)
+                            except Exception:
+                                pass
                             state.final_response = final_text
                             state.status = AgentNodeState.COMPLETED
                             return state
@@ -459,7 +518,10 @@ class DecisionNode(BaseNode):
                     rag_context = ""
                     if state.retrieved_context:
                         rag_context = "\n--- RAG CONTEXT ---\n" + "\n".join(
-                            [f"Source: {c['source']}\n{c['content']}" for c in state.retrieved_context]
+                            [
+                                f"Source: {c['source']}\n{c['content']}"
+                                for c in state.retrieved_context
+                            ]
                         )
                         res = await self.llm.generate(req)
                         final_text = res.text
@@ -467,22 +529,41 @@ class DecisionNode(BaseNode):
                         check_req = GenerationRequest(
                             organization_id=state.organization_id,
                             model=req.model,
-                            messages=[Message(role="user", content="Context: " + rag_context + "\n\nAnswer: " + final_text + "\n\nIs the answer fully supported by the context and are citations correct? Reply exactly YES or NO.")],
-                            temperature=0.0
+                            messages=[
+                                Message(
+                                    role="user",
+                                    content="Context: "
+                                    + rag_context
+                                    + "\n\nAnswer: "
+                                    + final_text
+                                    + "\n\nIs the answer fully supported by the context and are citations correct? Reply exactly YES or NO.",
+                                )
+                            ],
+                            temperature=0.0,
                         )
                         check_res = await self.llm.generate(check_req)
                         if "NO" in check_res.text.upper():
-                            final_text = "I cannot find a fully supported answer in the provided documents."
+                            final_text = (
+                                "I cannot find a fully supported answer in the provided documents."
+                            )
 
-                        await redis_client.publish(f"run_stream_{state.run_id}", final_text)
+                        try:
+                            await redis_client.publish(f"run_stream_{state.run_id}", final_text)
+                        except Exception:
+                            pass
                         state.final_response = final_text
                         state.status = AgentNodeState.COMPLETED
                     else:
                         async for chunk in self.llm.stream(req):
                             final_text += chunk
-                            await redis_client.publish(f"run_stream_{state.run_id}", chunk)
+                            try:
+                                await redis_client.publish(f"run_stream_{state.run_id}", chunk)
+                            except Exception:
+                                pass
                         if (
-                            final_text.startswith("I'm currently operating in offline fallback mode")
+                            final_text.startswith(
+                                "I'm currently operating in offline fallback mode"
+                            )
                             or "cannot perform that specific operation while offline" in final_text
                         ):
                             final_text = (
@@ -495,11 +576,238 @@ class DecisionNode(BaseNode):
                     state.add_error(FailureCategory.LLM_FAILURE, f"Decision stream failed: {e}")
                     state.status = AgentNodeState.FAILED
                 finally:
-                    await redis_client.aclose()
+                    try:
+                        await redis_client.aclose()
+                    except Exception:
+                        pass
 
             else:
                 state.add_error(FailureCategory.BUSINESS_RULE, "Deadlock detected in plan.")
                 state.status = AgentNodeState.FAILED
+            return state
+
+        # Deterministic fast-path for domain actions (invoices, quotations, latency)
+        # Avoids 30s LLM timeouts when exact structured arguments are already present in user request.
+        deterministic_actions = []
+        for step in ready_steps:
+            if step.type == "invoice.generate":
+                req_text = state.original_request or ""
+                req_lower = req_text.lower()
+                match = re.search(
+                    r"for\s+(.*?)\s+for\s+(\d+)\s+units\s+of\s+(.*?)\s+at\s+([a-zA-Z0-9_]+)\s+tier",
+                    req_text,
+                    re.IGNORECASE,
+                )
+                if match:
+                    comp, qty, model, tier = match.groups()
+                    deterministic_actions.append(
+                        AgentAction(
+                            action_id=step.id,
+                            action_type=step.type,
+                            description=f"Generate official tax invoice for {comp.strip()}",
+                            arguments={
+                                "company_name": comp.strip(),
+                                "model_number": model.strip(),
+                                "quantity": int(qty),
+                                "price_tier": tier.strip().lower(),
+                            },
+                            status="PENDING",
+                        )
+                    )
+                else:
+                    company = "Acme Technologies"
+                    for comp_k, comp_n in [
+                        ("acme", "Acme Technologies"),
+                        ("global", "Global Telecom Ltd"),
+                        ("nexa", "Nexa Communications"),
+                        ("apex", "Apex Enterprise"),
+                        ("nova", "Nova Systems"),
+                        ("cloud infotech", "Cloud Infotech Partner"),
+                        ("pcs", "PCS"),
+                    ]:
+                        if comp_k in req_lower:
+                            company = comp_n
+                            break
+                    else:
+                        comp_match = re.search(
+                            r"for\s+([A-Za-z0-9\s&.-]+?)(?:\s+for|\s+at|\s+with|\s*$)",
+                            req_text,
+                            re.IGNORECASE,
+                        )
+                        if comp_match:
+                            company = comp_match.group(1).strip()
+
+                    model = "UC-2000-VE-4T"
+                    for m in [
+                        "DAG1000-4S4O",
+                        "DAG1000-8S8O",
+                        "DAG1000-2S",
+                        "DAG1000-4S",
+                        "DAG1000-8S",
+                        "DAG2000-16S",
+                        "DAG2000-24S",
+                        "UC-2000-VE-2T",
+                        "UC-2000-VE-4T",
+                        "UC-2000-VE-8T",
+                        "UC-2000-VF-16T",
+                        "UC-2000-VG-32T",
+                        "UC120",
+                        "UC200",
+                        "SBC300-10",
+                        "SBC300-20",
+                        "SBC1000-050",
+                        "SBC3000",
+                    ]:
+                        if m.lower() in req_lower:
+                            model = m
+                            break
+
+                    qty = 1
+                    qty_match = re.search(
+                        r"(?:qty|quantity)[:\s]+(\d+)|(\d+)\s*(?:units?|pcs?|nos?)", req_lower
+                    )
+                    if qty_match:
+                        qty = max(1, int(qty_match.group(1) or qty_match.group(2)))
+
+                    tier = "end_customer"
+                    if "retail" in req_lower:
+                        tier = "retail"
+                    elif "msp" in req_lower:
+                        tier = "msp"
+                    elif "mrp" in req_lower:
+                        tier = "mrp"
+
+                    deterministic_actions.append(
+                        AgentAction(
+                            action_id=step.id,
+                            action_type=step.type,
+                            description=f"Generate official tax invoice for {company}",
+                            arguments={
+                                "company_name": company,
+                                "model_number": model,
+                                "quantity": qty,
+                                "price_tier": tier,
+                            },
+                            status="PENDING",
+                        )
+                    )
+
+            elif step.type == "quotation.create_draft":
+                req_text = state.original_request or ""
+                req_lower = req_text.lower()
+                match = re.search(
+                    r"for\s+(.*?)\s+for\s+(\d+)\s+units\s+of\s+(.*?)\s+at\s+([a-zA-Z0-9_]+)\s+tier",
+                    req_text,
+                    re.IGNORECASE,
+                )
+                if match:
+                    comp, qty, model, tier = match.groups()
+                    deterministic_actions.append(
+                        AgentAction(
+                            action_id=step.id,
+                            action_type=step.type,
+                            description=f"Create commercial quotation for {comp.strip()}",
+                            arguments={
+                                "company_name": comp.strip(),
+                                "model_number": model.strip(),
+                                "quantity": int(qty),
+                                "price_tier": tier.strip().lower(),
+                            },
+                            status="PENDING",
+                        )
+                    )
+                else:
+                    company = "Acme Technologies"
+                    for comp_k, comp_n in [
+                        ("acme", "Acme Technologies"),
+                        ("global", "Global Telecom Ltd"),
+                        ("nexa", "Nexa Communications"),
+                        ("apex", "Apex Enterprise"),
+                        ("nova", "Nova Systems"),
+                        ("cloud infotech", "Cloud Infotech Partner"),
+                        ("pcs", "PCS"),
+                    ]:
+                        if comp_k in req_lower:
+                            company = comp_n
+                            break
+                    else:
+                        comp_match = re.search(
+                            r"for\s+([A-Za-z0-9\s&.-]+?)(?:\s+for|\s+at|\s+with|\s*$)",
+                            req_text,
+                            re.IGNORECASE,
+                        )
+                        if comp_match:
+                            company = comp_match.group(1).strip()
+
+                    model = "UC-2000-VE-4T"
+                    for m in [
+                        "DAG1000-4S4O",
+                        "DAG1000-8S8O",
+                        "DAG1000-2S",
+                        "DAG1000-4S",
+                        "DAG1000-8S",
+                        "DAG2000-16S",
+                        "DAG2000-24S",
+                        "UC-2000-VE-2T",
+                        "UC-2000-VE-4T",
+                        "UC-2000-VE-8T",
+                        "UC-2000-VF-16T",
+                        "UC-2000-VG-32T",
+                        "UC120",
+                        "UC200",
+                        "SBC300-10",
+                        "SBC300-20",
+                        "SBC1000-050",
+                        "SBC3000",
+                    ]:
+                        if m.lower() in req_lower:
+                            model = m
+                            break
+
+                    qty = 1
+                    qty_match = re.search(
+                        r"(?:qty|quantity)[:\s]+(\d+)|(\d+)\s*(?:units?|pcs?|nos?)", req_lower
+                    )
+                    if qty_match:
+                        qty = max(1, int(qty_match.group(1) or qty_match.group(2)))
+
+                    tier = "end_customer"
+                    if "retail" in req_lower:
+                        tier = "retail"
+                    elif "msp" in req_lower:
+                        tier = "msp"
+                    elif "mrp" in req_lower:
+                        tier = "mrp"
+
+                    deterministic_actions.append(
+                        AgentAction(
+                            action_id=step.id,
+                            action_type=step.type,
+                            description=f"Create commercial quotation for {company}",
+                            arguments={
+                                "company_name": company,
+                                "model_number": model,
+                                "quantity": qty,
+                                "price_tier": tier,
+                            },
+                            status="PENDING",
+                        )
+                    )
+
+            elif step.type == "observability.get_api_latency":
+                deterministic_actions.append(
+                    AgentAction(
+                        action_id=step.id,
+                        action_type=step.type,
+                        description="Retrieve latency metrics from observability store",
+                        arguments={"time_range": "24h"},
+                        status="PENDING",
+                    )
+                )
+
+        if len(deterministic_actions) == len(ready_steps):
+            state.current_actions = deterministic_actions
+            state.status = AgentNodeState.READY_TO_EXECUTE
             return state
 
         history_context = "\n".join(
@@ -525,9 +833,7 @@ class DecisionNode(BaseNode):
                 rag_context += f"Source: {ctx['source']}\nContent: {ctx['content']}\n\n"
             rag_context += "--- END RAG CONTEXT ---\n"
 
-        user_prompt = (
-            f"Original User Request: {state.original_request}\n\n{rag_context}History:\n{history_context}\n\nWhat are the exact actions to take?"
-        )
+        user_prompt = f"Original User Request: {state.original_request}\n\n{rag_context}History:\n{history_context}\n\nWhat are the exact actions to take?"
 
         request = GenerationRequest(
             organization_id=state.organization_id,
@@ -578,5 +884,3 @@ class DecisionNode(BaseNode):
             state.status = AgentNodeState.FAILED
 
         return state
-
-

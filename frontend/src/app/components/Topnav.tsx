@@ -1,12 +1,121 @@
 'use client';
-import { useState, useEffect } from 'react';
-import { Bell, Search, Shield, ChevronDown, LogOut, CheckCircle2 } from 'lucide-react';
-import { logout } from '../lib/api';
 
-export default function Topnav() {
+import { useState, useEffect } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { 
+  Bell, 
+  Calendar, 
+  RefreshCw, 
+  Plus, 
+  Shield, 
+  ChevronDown, 
+  LogOut, 
+  SidebarOpen, 
+  SidebarClose, 
+  Sliders, 
+  Play,
+  PanelRightClose,
+  PanelRightOpen,
+  Sparkles
+} from 'lucide-react';
+import { fetchApi, logout } from '../lib/api';
+import { cn } from '../lib/utils';
+
+const routeHeaders: Record<string, { title: string; subtitle: string; actionLabel: string; actionHref: string }> = {
+  '/': {
+    title: 'AURA Overview',
+    subtitle: 'Real-time Autonomous Agent Metrics & Telemetry',
+    actionLabel: 'New Execution',
+    actionHref: '/conversations',
+  },
+  '/agents': {
+    title: 'Agent Directory',
+    subtitle: 'Enterprise Autonomous Agents & Service Catalog',
+    actionLabel: 'Create Agent',
+    actionHref: '/studio/agent',
+  },
+  '/studio/agent': {
+    title: 'Agent Studio',
+    subtitle: 'Agent Instructions, LLM Providers, Tools & Testing',
+    actionLabel: 'New Agent',
+    actionHref: '/studio/agent',
+  },
+  '/workflows': {
+    title: 'Workflow Studio',
+    subtitle: 'Multi-Agent Orchestration & Deterministic Pipelines',
+    actionLabel: 'New Pipeline',
+    actionHref: '/workflows',
+  },
+  '/executions': {
+    title: 'Executions & Monitoring',
+    subtitle: 'Execution Traces, Decisions, Latency & Token Usage',
+    actionLabel: 'Run Agent',
+    actionHref: '/conversations',
+  },
+  '/approvals': {
+    title: 'Action Approvals',
+    subtitle: 'Human-in-the-Loop Governance & Authorization Gates',
+    actionLabel: 'Review Requests',
+    actionHref: '/approvals',
+  },
+  '/knowledge': {
+    title: 'Knowledge Bases',
+    subtitle: 'Enterprise RAG Documents, Chunking & Vector Store',
+    actionLabel: 'Add Document',
+    actionHref: '/knowledge',
+  },
+  '/tools': {
+    title: 'Tool Registry',
+    subtitle: 'Enterprise Capabilities, Permissions & Security Risk Tiers',
+    actionLabel: 'View Registry',
+    actionHref: '/tools',
+  },
+  '/mcp': {
+    title: 'MCP Integrations',
+    subtitle: 'Model Context Protocol Servers & SSE Transports',
+    actionLabel: 'Connect Server',
+    actionHref: '/mcp',
+  },
+  '/analytics': {
+    title: 'Agent Performance',
+    subtitle: 'Token Expenditure, Model Routing & Latency Percentiles',
+    actionLabel: 'Export Data',
+    actionHref: '/analytics',
+  },
+  '/audit': {
+    title: 'Error Tracking & Audit',
+    subtitle: 'Security Events, Tenant Access & Exception Tracing',
+    actionLabel: 'Filter Logs',
+    actionHref: '/audit',
+  },
+  '/settings': {
+    title: 'Platform Settings',
+    subtitle: 'Model Provider Credentials & Tenant Configuration',
+    actionLabel: 'Save Changes',
+    actionHref: '/settings',
+  },
+  '/conversations': {
+    title: 'Live Agent Chat',
+    subtitle: 'Autonomous Execution, Quotation & Invoicing Copilot',
+    actionLabel: 'New Session',
+    actionHref: '/conversations',
+  },
+};
+
+interface TopnavProps {
+  rightPanelOpen?: boolean;
+  onToggleRightPanel?: () => void;
+}
+
+export default function Topnav({ rightPanelOpen = true, onToggleRightPanel }: TopnavProps) {
+  const pathname = usePathname();
+  const router = useRouter();
   const [userName, setUserName] = useState<string>('Enterprise Operator');
   const [tenantName, setTenantName] = useState<string>('Production Org');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -15,99 +124,100 @@ export default function Topnav() {
       const org = localStorage.getItem('organization_id');
       if (org) setTenantName(`Tenant (${org.slice(0, 8)}...)`);
     }
-  }, []);
+
+    async function checkApprovals() {
+      try {
+        const res = await fetchApi('/approvals');
+        if (res.ok) {
+          const json = await res.json();
+          const list = json.approvals || [];
+          const count = list.filter((a: any) => a.status === 'PENDING').length;
+          setPendingApprovalsCount(count);
+        }
+      } catch {}
+    }
+    checkApprovals();
+  }, [pathname]);
+
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    router.refresh();
+    setTimeout(() => setIsRefreshing(false), 800);
+  };
+
+  const currentRouteConfig = routeHeaders[pathname] || {
+    title: 'AURA Platform',
+    subtitle: 'Enterprise AI Agent Orchestration',
+    actionLabel: 'Action',
+    actionHref: '/',
+  };
 
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200/80 bg-white/90 backdrop-blur-md px-6 z-10 transition-colors">
-      {/* Global Search Bar */}
-      <div className="flex items-center gap-3 w-96">
-        <div className="relative w-full">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search agents, workflows, knowledge or executions..."
-            className="w-full rounded-lg border border-slate-200 bg-slate-50/60 pl-9 pr-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all"
-          />
-        </div>
+    <header className="h-16 px-6 flex items-center justify-between border-b border-border bg-card shrink-0 select-none z-10 transition-colors">
+      {/* Title & Subtitle */}
+      <div>
+        <h1 className="text-base font-semibold text-foreground tracking-tight leading-tight">
+          {currentRouteConfig.title}
+        </h1>
+        <p className="text-xs text-muted-foreground leading-tight mt-0.5">
+          {currentRouteConfig.subtitle}
+        </p>
       </div>
 
-      {/* Right controls: Health status, notification, user menu */}
-      <div className="flex items-center gap-4">
-        {/* System Health Badge */}
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200/60 text-emerald-700 text-xs font-medium">
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-          </span>
-          <span>Engine Online</span>
+      {/* Action Controls matching Pulse Header */}
+      <div className="flex items-center gap-2.5">
+        {/* Time Range Selector */}
+        <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-muted/40 text-xs text-foreground font-medium">
+          <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
+          <span>Last 24 hours</span>
         </div>
 
-        {/* Security / Compliance Badge */}
-        <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-medium">
-          <Shield className="h-3.5 w-3.5 text-blue-600" />
-          <span>RBAC Enforced</span>
-        </div>
-
-        <div className="h-4 w-px bg-slate-200" />
-
-        {/* Notifications */}
+        {/* Refresh button */}
         <button
           type="button"
-          aria-label="Notifications"
-          className="relative p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+          onClick={handleRefresh}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-muted text-xs text-foreground font-medium transition-colors"
+          title="Refresh current page"
         >
-          <Bell className="h-4 w-4" />
-          <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-blue-600" />
+          <RefreshCw className={cn('w-3.5 h-3.5 text-muted-foreground', isRefreshing && 'animate-spin')} />
+          <span className="hidden md:inline">Refresh</span>
         </button>
 
-        {/* User Profile Menu */}
-        <div className="relative">
-          <button
-            onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            className="flex items-center gap-2.5 rounded-lg p-1.5 hover:bg-slate-50 transition-colors text-left"
-          >
-            <div className="h-7 w-7 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
-              {userName.charAt(0).toUpperCase()}
-            </div>
-            <div className="hidden lg:block text-left">
-              <p className="text-xs font-semibold text-slate-900 leading-tight">{userName}</p>
-              <p className="text-[10px] text-slate-500 leading-tight">{tenantName}</p>
-            </div>
-            <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
-          </button>
-
-          {isDropdownOpen && (
-            <div className="absolute right-0 mt-2 w-56 rounded-xl border border-slate-200 bg-white py-1.5 shadow-lg ring-1 ring-black/5 z-50">
-              <div className="px-4 py-2 border-b border-slate-100">
-                <p className="text-xs font-semibold text-slate-900">{userName}</p>
-                <p className="text-[11px] text-slate-500 truncate">{tenantName}</p>
-              </div>
-              <div className="py-1">
-                <a
-                  href="/settings"
-                  className="block px-4 py-1.5 text-xs text-slate-700 hover:bg-slate-50 transition-colors"
-                >
-                  Organization Settings
-                </a>
-                <a
-                  href="/audit"
-                  className="block px-4 py-1.5 text-xs text-slate-700 hover:bg-slate-50 transition-colors"
-                >
-                  My Audit Records
-                </a>
-              </div>
-              <div className="border-t border-slate-100 pt-1">
-                <button
-                  onClick={() => logout()}
-                  className="w-full flex items-center gap-2 px-4 py-1.5 text-xs text-red-600 hover:bg-red-50 transition-colors"
-                >
-                  <LogOut className="h-3.5 w-3.5" />
-                  Sign Out
-                </button>
-              </div>
-            </div>
+        {/* Alerts / Pending Approvals Bell */}
+        <Link
+          href="/approvals"
+          className="relative p-2 rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+          title={pendingApprovalsCount > 0 ? `${pendingApprovalsCount} pending approvals` : 'System notifications'}
+        >
+          <Bell className="w-4 h-4" />
+          {pendingApprovalsCount > 0 && (
+            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-destructive rounded-full animate-pulse" />
           )}
-        </div>
+        </Link>
+
+        {/* Right Panel Toggle Button */}
+        {onToggleRightPanel && (
+          <button
+            type="button"
+            onClick={onToggleRightPanel}
+            className={cn(
+              'p-2 rounded-xl transition-colors',
+              rightPanelOpen ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+            )}
+            title={rightPanelOpen ? 'Collapse live operations panel' : 'Expand live operations panel'}
+          >
+            {rightPanelOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
+          </button>
+        )}
+
+        {/* Primary Page Action Button */}
+        <Link
+          href={currentRouteConfig.actionHref}
+          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold shadow-xs transition-colors shrink-0"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          <span>{currentRouteConfig.actionLabel}</span>
+        </Link>
       </div>
     </header>
   );

@@ -59,6 +59,7 @@ end
 return {1, tonumber(new_daily), tonumber(new_monthly), 'OK'}
 """
 
+
 class CostManager:
     _redis_client: ClassVar[aioredis.Redis | None] = None
     _script_sha: ClassVar[str | None] = None
@@ -67,7 +68,9 @@ class CostManager:
     async def get_redis(cls) -> aioredis.Redis:
         if cls._redis_client is None:
             settings = get_settings()
-            cls._redis_client = aioredis.from_url(settings.redis_url, socket_timeout=2.0)
+            cls._redis_client = aioredis.from_url(
+                settings.redis_url, socket_timeout=1.0, socket_connect_timeout=1.0
+            )
         return cls._redis_client
 
     @classmethod
@@ -102,14 +105,13 @@ class CostManager:
         estimated_cost_usd: float,
         run_id: uuid.UUID | None = None,
     ) -> BudgetCheck:
-        redis = await cls.get_redis()
-        org_key = str(organization_id)
-
-        now = datetime.now(UTC)
-        daily_key = f"budget:daily:{org_key}:{now.strftime('%Y%m%d')}"
-        monthly_key = f"budget:monthly:{org_key}:{now.strftime('%Y%m')}"
-
         try:
+            redis = await cls.get_redis()
+            org_key = str(organization_id)
+
+            now = datetime.now(UTC)
+            daily_key = f"budget:daily:{org_key}:{now.strftime('%Y%m%d')}"
+            monthly_key = f"budget:monthly:{org_key}:{now.strftime('%Y%m')}"
             res = await redis.eval(
                 LUA_SCRIPT,
                 2,
@@ -117,7 +119,7 @@ class CostManager:
                 monthly_key,
                 estimated_cost_usd,
                 DEFAULT_ORG_DAILY_BUDGET_USD,
-                DEFAULT_ORG_MONTHLY_BUDGET_USD
+                DEFAULT_ORG_MONTHLY_BUDGET_USD,
             )
             success, daily_spend, _monthly_spend, msg = res
             status = BudgetStatus.OK
@@ -135,7 +137,7 @@ class CostManager:
                 org_daily_budget_usd=DEFAULT_ORG_DAILY_BUDGET_USD,
                 org_daily_spend_usd=float(daily_spend),
                 status=status,
-                message=message
+                message=message,
             )
         except Exception as e:
             logger.error("redis_budget_check_failed", error=str(e))
@@ -148,7 +150,7 @@ class CostManager:
                 org_daily_budget_usd=DEFAULT_ORG_DAILY_BUDGET_USD,
                 org_daily_spend_usd=0.0,
                 status=BudgetStatus.OK,
-                message="Fallback allow"
+                message="Fallback allow",
             )
 
     @classmethod

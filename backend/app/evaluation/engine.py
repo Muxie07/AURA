@@ -294,9 +294,13 @@ class GoldenDatasetEvaluator:
     """
     Evaluates agent output against golden dataset examples.
     """
+
     @staticmethod
-    def evaluate_retrieval(expected_chunk_ids: list[str], actual_chunk_ids: list[str]) -> dict[str, float]:
+    def evaluate_retrieval(
+        expected_chunk_ids: list[str], actual_chunk_ids: list[str]
+    ) -> dict[str, float]:
         import math
+
         k = len(actual_chunk_ids)
         if not expected_chunk_ids or not actual_chunk_ids:
             return {"recall_at_k": 0.0, "mrr": 0.0, "ndcg": 0.0}

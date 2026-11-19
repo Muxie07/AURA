@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import AliasChoices, AnyHttpUrl, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -51,6 +52,10 @@ class EmbeddingProvider(StrEnum):
     OLLAMA = "ollama"
 
 
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+_ENV_FILES = (_PROJECT_ROOT / ".env", ".env", "../.env")
+
+
 class Settings(BaseSettings):
     """
     Application settings loaded from environment variables.
@@ -60,7 +65,7 @@ class Settings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_ENV_FILES,
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -240,6 +245,41 @@ class Settings(BaseSettings):
     # =========================================================================
 
     # =========================================================================
+    # =========================================================================
+    # Google OAuth 2.0 & Gmail Integration
+    # =========================================================================
+    google_client_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("GOOGLE_CLIENT_ID", "AURA_GOOGLE_CLIENT_ID"),
+        description="Google OAuth 2.0 Client ID for Gmail API.",
+    )
+    google_client_secret: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("GOOGLE_CLIENT_SECRET", "AURA_GOOGLE_CLIENT_SECRET"),
+        description="Google OAuth 2.0 Client Secret for Gmail API.",
+    )
+    google_redirect_uri: str = Field(
+        default="http://localhost:8000/api/v1/integrations/gmail/oauth/callback",
+        validation_alias=AliasChoices("GOOGLE_REDIRECT_URI", "GOOGLE_OAUTH_REDIRECT_URI"),
+        description="OAuth 2.0 authorized redirect callback URI registered with Google Cloud.",
+    )
+    google_gmail_scope: str = Field(
+        default="https://www.googleapis.com/auth/gmail.send",
+        validation_alias=AliasChoices("GOOGLE_GMAIL_SCOPE"),
+        description="Minimum required Gmail OAuth scope.",
+    )
+    gmail_sender_email: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("GMAIL_SENDER_EMAIL", "GMAIL_USER"),
+        description="Default authorized Gmail sender address.",
+    )
+    aura_frontend_base_url: str = Field(
+        default="http://localhost:3000",
+        validation_alias=AliasChoices("AURA_FRONTEND_BASE_URL", "FRONTEND_URL"),
+        description="Base URL of the AURA frontend dashboard.",
+    )
+
+    # =========================================================================
     # Phase 1: New Settings
     # =========================================================================
     aura_run_migrations_on_startup: bool = Field(default=True)
@@ -251,7 +291,9 @@ class Settings(BaseSettings):
     aura_sentry_dsn: AnyHttpUrl | None = Field(default=None)
     aura_daily_org_budget_usd: float = Field(default=10.0)
     aura_max_request_bytes: int = Field(default=10485760)  # 10MB
-    aura_trusted_hosts: list[str] = Field(default=["localhost", "127.0.0.1", "backend", "api", "testserver"])
+    aura_trusted_hosts: list[str] = Field(
+        default=["localhost", "127.0.0.1", "backend", "api", "testserver"]
+    )
     aura_jwt_iss: str = Field(default="aura")
     aura_jwt_aud: str = Field(default="aura")
     aura_demo_password: str = Field(default="demo1234")
@@ -319,11 +361,14 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_embeddings(self) -> Settings:
         """Validate embedding provider and models."""
-        # Simple validation: if we're using OpenAI, we need an API key
-        if self.embedding_provider == EmbeddingProvider.OPENAI and not self.openai_api_key:
-            raise ValueError("OPENAI_API_KEY required for OpenAI embeddings")
-        if self.embedding_provider == EmbeddingProvider.GOOGLE and not self.google_ai_api_key:
-            raise ValueError("GOOGLE_AI_API_KEY required for Google embeddings")
+        if self.aura_env in (Environment.PRODUCTION, Environment.STAGING):
+            if self.embedding_provider == EmbeddingProvider.OPENAI and not self.openai_api_key:
+                raise ValueError("OPENAI_API_KEY required for OpenAI embeddings in production")
+            if self.embedding_provider == EmbeddingProvider.GOOGLE and not self.google_ai_api_key:
+                raise ValueError("GOOGLE_AI_API_KEY required for Google embeddings in production")
+        else:
+            if self.embedding_provider == EmbeddingProvider.OPENAI and not self.openai_api_key:
+                self.embedding_provider = EmbeddingProvider.OLLAMA
         return self
 
     @model_validator(mode="after")
@@ -352,7 +397,9 @@ class Settings(BaseSettings):
             if self.aura_debug:
                 raise ValueError("AURA_DEBUG must be false in production.")
             if "*" in self.aura_trusted_hosts or "localhost" in self.aura_trusted_hosts:
-                raise ValueError("AURA_TRUSTED_HOSTS: must not contain wildcards or localhost in prod.")
+                raise ValueError(
+                    "AURA_TRUSTED_HOSTS: must not contain wildcards or localhost in prod."
+                )
             if not str(self.aura_api_base_url).startswith("https"):
                 raise ValueError("AURA_API_BASE_URL: must use https in production.")
             if self.aura_log_format != LogFormat.JSON:

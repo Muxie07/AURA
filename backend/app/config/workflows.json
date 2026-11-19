@@ -1,0 +1,182 @@
+[
+  {
+    "id": "tmpl-quotation-pipeline",
+    "title": "B2B Quotation & Approval Pipeline",
+    "description": "Customer RFQ -> Catalog RAG retrieval -> LLM pricing auditor -> Human email discount approval -> Draft Quotation PDF dispatch.",
+    "nodeCount": 6,
+    "nodes": [
+      {
+        "id": "n-start",
+        "type": "start",
+        "title": "Start",
+        "role": "RFQ Ingestion",
+        "model": "",
+        "status": "idle",
+        "borderColor": "border-emerald-500/80",
+        "badgeColor": "bg-emerald-500/15 text-emerald-400",
+        "icon": "start",
+        "x": 20,
+        "y": 140
+      },
+      {
+        "id": "n-scout",
+        "type": "researcher",
+        "title": "Catalog Retriever",
+        "role": "RAG Search",
+        "model": "gemini-2.5-flash",
+        "status": "idle",
+        "borderColor": "border-cyan-500/80",
+        "badgeColor": "bg-cyan-500/15 text-cyan-400",
+        "icon": "search",
+        "x": 230,
+        "y": 60,
+        "outputLog": "Matched Cloud Infotech VoIP Gateways & SIP rate sheets."
+      },
+      {
+        "id": "n-analyst",
+        "type": "analyst",
+        "title": "Pricing Auditor",
+        "role": "Discount Check",
+        "model": "gemini-2.5-flash",
+        "status": "idle",
+        "borderColor": "border-amber-500/80",
+        "badgeColor": "bg-amber-500/15 text-amber-400",
+        "icon": "chart",
+        "x": 470,
+        "y": 60,
+        "outputLog": "Flagged 25% discount on UC-2000-VE-8T (exceeds 20% limit)."
+      },
+      {
+        "id": "n-moderator",
+        "type": "approval",
+        "title": "Human Email Sign-off",
+        "role": "In-Email Gate",
+        "model": "approval-engine",
+        "status": "idle",
+        "borderColor": "border-amber-500/90",
+        "badgeColor": "bg-amber-500/20 text-amber-300",
+        "icon": "mail",
+        "x": 710,
+        "y": 60,
+        "outputLog": "Dispatched approval email with 1-click tokenized URL."
+      },
+      {
+        "id": "n-polish",
+        "type": "reviewer",
+        "title": "Quotation PDF Generator",
+        "role": "Doc Dispatch",
+        "model": "gemini-2.5-flash",
+        "status": "idle",
+        "borderColor": "border-emerald-500/80",
+        "badgeColor": "bg-emerald-500/15 text-emerald-400",
+        "icon": "check",
+        "x": 470,
+        "y": 220,
+        "outputLog": "Official commercial Quotation PDF finalized and stored."
+      },
+      {
+        "id": "n-end",
+        "type": "end",
+        "title": "End",
+        "role": "Completed RFQ",
+        "model": "",
+        "status": "idle",
+        "borderColor": "border-slate-500/80",
+        "badgeColor": "bg-slate-500/15 text-slate-400",
+        "icon": "stop",
+        "x": 710,
+        "y": 220
+      }
+    ]
+  },
+  {
+    "id": "tmpl-content-review",
+    "title": "Content Review Pipeline",
+    "description": "Enter a topic or brief -- the Writer drafts content, the Reviewer critiques it, then you approve before publish.",
+    "nodeCount": 5,
+    "nodes": [
+      {
+        "id": "n-start",
+        "type": "start",
+        "title": "Start",
+        "role": "Entry Point",
+        "model": "",
+        "status": "idle",
+        "borderColor": "border-emerald-500/80",
+        "badgeColor": "bg-emerald-500/15 text-emerald-400",
+        "icon": "start",
+        "x": 20,
+        "y": 140
+      },
+      {
+        "id": "n-scout",
+        "type": "researcher",
+        "title": "Trend Scout",
+        "role": "Researcher",
+        "model": "gemini-2.5-flash",
+        "status": "idle",
+        "borderColor": "border-cyan-500/80",
+        "badgeColor": "bg-cyan-500/15 text-cyan-400",
+        "icon": "search",
+        "x": 230,
+        "y": 60,
+        "outputLog": "Synthesized 14 market trends and competitive pricing indexes."
+      },
+      {
+        "id": "n-analyst",
+        "type": "analyst",
+        "title": "Impact Analyst",
+        "role": "Analyst",
+        "model": "gemini-2.5-flash",
+        "status": "idle",
+        "borderColor": "border-amber-500/80",
+        "badgeColor": "bg-amber-500/15 text-amber-400",
+        "icon": "chart",
+        "x": 470,
+        "y": 60,
+        "outputLog": "Quantified margin impact: +18.4% gross profit at standard tier."
+      },
+      {
+        "id": "n-moderator",
+        "type": "writer",
+        "title": "Roundtable Moderator",
+        "role": "Writer",
+        "model": "gemini-2.5-flash",
+        "status": "idle",
+        "borderColor": "border-purple-500/80",
+        "badgeColor": "bg-purple-500/15 text-purple-400",
+        "icon": "writer",
+        "x": 710,
+        "y": 60,
+        "outputLog": "Structured commercial quotation terms & SLA clauses."
+      },
+      {
+        "id": "n-polish",
+        "type": "reviewer",
+        "title": "Fact-Check & Polish",
+        "role": "Reviewer",
+        "model": "gemini-2.5-flash",
+        "status": "idle",
+        "borderColor": "border-emerald-500/80",
+        "badgeColor": "bg-emerald-500/15 text-emerald-400",
+        "icon": "check",
+        "x": 470,
+        "y": 220,
+        "outputLog": "Audited 100% compliance with corporate rate card."
+      },
+      {
+        "id": "n-end",
+        "type": "end",
+        "title": "End",
+        "role": "Termination",
+        "model": "",
+        "status": "idle",
+        "borderColor": "border-slate-500/80",
+        "badgeColor": "bg-slate-500/15 text-slate-400",
+        "icon": "stop",
+        "x": 710,
+        "y": 220
+      }
+    ]
+  }
+]

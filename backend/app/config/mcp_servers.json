@@ -1,0 +1,47 @@
+[
+  {
+    "id": "mcp-aura-local",
+    "name": "AURA Builtin ERP & Quotation Hub",
+    "endpoint": "http://localhost:8000/api/v1/mcp/messages",
+    "transport": "sse",
+    "status": "CONNECTED",
+    "tools_count": 5,
+    "scopes": [
+      "quotation:write",
+      "invoice:generate",
+      "catalog:read"
+    ],
+    "last_ping_ms": 680,
+    "risk_level": "ELEVATED",
+    "description": "Internal secured container executing local database pricing models and invoice issuance tools."
+  },
+  {
+    "id": "mcp-crm-bridge",
+    "name": "Enterprise CRM & Account Registry",
+    "endpoint": "http://localhost:8000/api/v1/tools/utcp",
+    "transport": "sse",
+    "status": "CONNECTED",
+    "tools_count": 3,
+    "scopes": [
+      "customer:search",
+      "customer:credit_limit"
+    ],
+    "last_ping_ms": 28,
+    "risk_level": "STANDARD",
+    "description": "Read-only connection to corporate customer records and payment credit histories."
+  },
+  {
+    "id": "mcp-inventory-sync",
+    "name": "Warehouse & Cloud Infotech Stock Bridge",
+    "endpoint": "http://localhost:8000/api/v1/knowledge-bases",
+    "transport": "sse",
+    "status": "CONNECTED",
+    "tools_count": 2,
+    "scopes": [
+      "inventory:check_stock"
+    ],
+    "last_ping_ms": 35,
+    "risk_level": "STANDARD",
+    "description": "Real-time stock checks for Grandstream, Fanvil, and Yeastar hardware models."
+  }
+]

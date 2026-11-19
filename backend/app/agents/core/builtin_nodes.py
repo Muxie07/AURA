@@ -120,6 +120,8 @@ class ExecutionNode(BaseNode):
         await self.registry.ensure_mcp_initialized(state.organization_id)
 
         db = kwargs.get("db")
+        if hasattr(self.registry, "ensure_utcp_initialized") and db:
+            await self.registry.ensure_utcp_initialized(state.organization_id, db=db)
         if not db:
             raise ValueError("Database session is required for ExecutionNode")
 
@@ -144,7 +146,9 @@ class ExecutionNode(BaseNode):
             )
 
             try:
-                result = await self.registry.execute(db, action.action_type, action.arguments, context)
+                result = await self.registry.execute(
+                    db, action.action_type, action.arguments, context
+                )
 
                 end_time = datetime.now(timezone.utc)
                 history_item.completed_at = end_time
@@ -170,24 +174,101 @@ class ExecutionNode(BaseNode):
                     sa.select(ApprovalRequest).where(
                         ApprovalRequest.agent_run_id == state.run_id,
                         ApprovalRequest.tool_name == action.action_type,
-                        ApprovalRequest.status == ApprovalStatus.PENDING
+                        ApprovalRequest.status == ApprovalStatus.PENDING,
                     )
                 )
                 if not existing:
-                    clean_args = {k: v for k, v in action.arguments.items() if not k.startswith('_')}
+                    clean_args = {
+                        k: v for k, v in action.arguments.items() if not k.startswith("_")
+                    }
+                    now_utc = datetime.now(timezone.utc)
+                    expires_utc = now_utc + timedelta(hours=24)
+
+                    # Extract customer/company info if present
+                    company_name = (
+                        clean_args.get("company_name")
+                        or clean_args.get("customer_name")
+                        or "Enterprise Client"
+                    )
+                    recipient_email = (
+                        clean_args.get("recipient") or clean_args.get("customer_email") or ""
+                    )
+                    total_val = clean_args.get("total") or clean_args.get("amount") or "N/A"
+                    disc_pct = clean_args.get("discount_percent", 0.0)
+
+                    # Build structured, auditable business action record (Phase 2 requirement)
+                    structured_details = {
+                        "action_name": action.action_type,
+                        "company_name": company_name,
+                        "business_objective": clean_args.get("business_objective")
+                        or f"Execute business operation: {action.action_type} for {company_name}",
+                        "explanation": clean_args.get("explanation")
+                        or f"AURA autonomous agent has formulated a commercial transaction for '{company_name}' that requires governance authorization.",
+                        "why_necessary": clean_args.get("why_necessary")
+                        or f"Operational policy threshold reached: {e.reason or 'Risk classification check'}",
+                        "supporting_evidence": {
+                            "client": company_name,
+                            "product_model": clean_args.get("model_number")
+                            or clean_args.get("items")
+                            or "Commercial Catalog Items",
+                            "discount_requested": f"{disc_pct}%"
+                            if disc_pct
+                            else "Standard Pricing",
+                            "catalog_source": "Enterprise Master Catalog & Rate Cards",
+                            "policy_basis": e.reason or "Enterprise Risk Management Standard",
+                        },
+                        "target_recipient": recipient_email or company_name,
+                        "exact_parameters": clean_args,
+                        "financial_impact": f"Total Value: ${total_val}, Discount: {disc_pct}%"
+                        if (disc_pct or total_val != "N/A")
+                        else "Commercial External Action",
+                        "operational_impact": "Dispatches official quotation to customer and updates commercial records.",
+                        "risks_and_uncertainties": "Non-reversible customer-facing commitment once dispatched.",
+                        "approval_policy": e.reason
+                        or "Human-in-the-Loop Commercial Governance Gate",
+                        "request_timestamp": now_utc.isoformat(),
+                        "expiration_timestamp": expires_utc.isoformat(),
+                        "execution_status": "AWAITING_APPROVAL",
+                        **clean_args,
+                    }
+
+                    action_summary_text = (
+                        f"Send Quotation to {company_name}"
+                        if "quotation" in action.action_type
+                        else f"Execute {action.action_type}"
+                    )
+                    if e.reason:
+                        action_summary_text += f": {e.reason}"
+
                     approval = ApprovalRequest(
                         agent_run_id=state.run_id,
                         organization_id=state.organization_id,
                         tool_name=action.action_type,
-                        action_summary=f"Execution of {action.action_type}",
-                        action_details=clean_args,
+                        action_summary=action_summary_text,
+                        action_details=structured_details,
                         args_hash=e.args_hash,
-                        reason=e.reason,
                         status=ApprovalStatus.PENDING,
-                        expires_at=datetime.now(timezone.utc) + timedelta(hours=24)
+                        expires_at=expires_utc,
                     )
                     db.add(approval)
                     await db.flush()
+
+                    # Trigger Email Notification with 1-click In-Email review and authorization
+                    try:
+                        from app.services.email_service import EmailNotificationService
+
+                        await EmailNotificationService.send_approval_request_email(
+                            approval_id=approval.id,
+                            tool_name=action.action_type,
+                            action_summary=action_summary_text,
+                            action_details=structured_details,
+                            reason=e.reason,
+                            recipient_email=recipient_email or None,
+                            agent_run_id=state.run_id,
+                            organization_id=state.organization_id,
+                        )
+                    except Exception as email_err:
+                        logger.warning("failed_to_dispatch_approval_email", error=str(email_err))
                 return
 
             except ToolNotFoundError as e:

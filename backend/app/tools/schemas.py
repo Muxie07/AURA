@@ -14,6 +14,7 @@ class RiskLevel(StrEnum):
 class ToolSource(StrEnum):
     INTERNAL = "internal"
     MCP = "mcp"
+    UTCP = "utcp"
 
 
 class ToolDefinition(BaseModel):
@@ -40,6 +41,7 @@ class ToolContext(BaseModel):
     user_id: uuid.UUID | None = None
     request_id: str | None = None
     approved: bool = False
+    approval_id: uuid.UUID | None = None
 
 
 class ToolResult(BaseModel):

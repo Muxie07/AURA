@@ -22,7 +22,6 @@ if TYPE_CHECKING:
     from structlog.types import EventDict, Processor
 
 
-
 def _redact_secrets(logger, method, event_dict):
     """Redact sensitive fields from logs."""
     sensitive_keys = {"authorization", "api_key", "password", "token", "secret", "session"}
@@ -42,9 +41,11 @@ def _redact_secrets(logger, method, event_dict):
 
     return _redact(event_dict)
 
+
 def _redact_prompts(logger, method, event_dict):
     """Do not log full prompts or tool args in production by default."""
     from app.config.settings import get_settings
+
     settings = get_settings()
     if not settings.aura_debug:
         for key in ["prompt", "messages", "content", "tool_arguments", "arguments"]:
@@ -57,6 +58,7 @@ def _redact_prompts(logger, method, event_dict):
                 elif isinstance(val, dict):
                     event_dict[key] = "[TRUNCATED DICT]"
     return event_dict
+
 
 def _add_service_context(
     logger: logging.Logger,
