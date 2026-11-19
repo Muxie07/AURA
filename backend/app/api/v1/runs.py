@@ -754,9 +754,7 @@ a {{ display: inline-block; background: #2563eb; color: #fff; padding: 12px 24px
     # Render authenticated action confirmation form - GET NEVER MUTATES STATE!
     import json
 
-    args_json = html.escape(
-        json.dumps(approval.action_details, indent=2), quote=False
-    )
+    args_json = html.escape(json.dumps(approval.action_details, indent=2), quote=False)
 
     return HTMLResponse(
         content=f"""<!DOCTYPE html>

@@ -22,12 +22,15 @@ jobs:
       - name: Ruff Format Check
         run: ruff format --check app/
         working-directory: backend
-        continue-on-error: true
-      - name: Ruff Lint
+      # Lint and type-check are intentionally non-blocking: this codebase carries
+      # pre-existing lint/type debt that hasn't been paid down yet (tracked as a
+      # known limitation, not swept under continue-on-error silently). They still
+      # run on every PR so the debt is visible, they just don't fail the build.
+      - name: Ruff Lint (non-blocking, known debt)
         run: ruff check app/
         working-directory: backend
         continue-on-error: true
-      - name: Mypy
+      - name: Mypy (non-blocking, known debt)
         run: mypy app
         working-directory: backend
         continue-on-error: true
@@ -79,7 +82,6 @@ jobs:
           REDIS_URL: redis://localhost:6379/0
         run: pytest --cov=app --cov-report=xml
         working-directory: backend
-        continue-on-error: true
       - name: Upload coverage
         uses: codecov/codecov-action@v4
         with:

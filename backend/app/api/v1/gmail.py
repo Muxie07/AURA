@@ -509,7 +509,5 @@ def _redact_dispatch(record: dict[str, Any]) -> dict[str, Any]:
 async def list_recent_dispatches(current_user: CurrentUserDep) -> dict[str, Any]:
     """Admin-only: recent dispatched approval notifications, with live tokens/links redacted."""
     return {
-        "dispatches": [
-            _redact_dispatch(r) for r in EmailNotificationService.get_recent_emails()
-        ]
+        "dispatches": [_redact_dispatch(r) for r in EmailNotificationService.get_recent_emails()]
     }

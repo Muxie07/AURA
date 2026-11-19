@@ -60,6 +60,7 @@ async def rate_limit_dependency(request: Request) -> None:
             headers={"Retry-After": str(window)},
         )
 
+
 async def login_rate_limit_dependency(request: Request) -> None:
     """
     Sliding-window rate limit dedicated to the login endpoint.
