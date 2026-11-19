@@ -5,13 +5,14 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import bcrypt
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from jose import jwt
 from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.api.deps import DatabaseDep, SettingsDep
 from app.database.models import User
+from app.security.rate_limit import login_rate_limit_dependency
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -29,7 +30,11 @@ class TokenResponse(BaseModel):
     full_name: str
 
 
-@router.post("/token", response_model=TokenResponse)
+@router.post(
+    "/token",
+    response_model=TokenResponse,
+    dependencies=[Depends(login_rate_limit_dependency)],
+)
 async def login(body: LoginRequest, db: DatabaseDep, settings: SettingsDep):
     """Authenticate a user and return a JWT access token."""
     result = await db.execute(select(User).where(User.email == body.email, User.is_active == True))  # noqa: E712

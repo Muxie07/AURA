@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from app.ai.routing.router import ModelRouter
 from app.ai.schemas.generation import GenerationRequest, Message
 from app.ai.services.llm import LLMService
+from app.api.deps import CurrentUserDep
 from app.security.rate_limit import rate_limit_dependency
 
 router = APIRouter()
@@ -36,6 +37,7 @@ class IntentResult(BaseModel):
 )
 async def test_generate(
     request: GenerateRequest,
+    current_user: CurrentUserDep,
 ) -> Any:
     """Test endpoint for normal generation."""
     llm_service = LLMService()
@@ -60,6 +62,7 @@ async def test_generate(
 )
 async def test_classify(
     request: ClassifyRequest,
+    current_user: CurrentUserDep,
 ) -> Any:
     """Test endpoint for structured generation."""
     llm_service = LLMService()

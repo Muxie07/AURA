@@ -1,4 +1,5 @@
 import asyncio
+import html
 import json
 import uuid
 from datetime import datetime
@@ -11,7 +12,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
 from app.ai.services.llm import LLMService
-from app.api.deps import CurrentUserDep, DatabaseDep
+from app.api.deps import CurrentUserDep, DatabaseDep, RequireRole
 from app.database.models import (
     AgentRun,
     AgentRunStatus,
@@ -21,6 +22,7 @@ from app.database.models import (
     Conversation,
     Message,
     MessageRole,
+    UserRole,
 )
 from app.knowledge.rag_service import RAGService
 from app.security.rate_limit import rate_limit_dependency
@@ -592,13 +594,10 @@ async def list_approvals(
     }
 
 
-@router.post("/approvals/{approval_id}/approve")
-async def approve_request(
-    approval_id: uuid.UUID,
-    db: DatabaseDep,
-    current_user: CurrentUserDep,
-    background_tasks: BackgroundTasks,
-) -> Any:
+async def _load_pending_approval_for_org(
+    db: DatabaseDep, approval_id: uuid.UUID, current_user: CurrentUserDep
+) -> ApprovalRequest:
+    """Loads a PENDING approval scoped to the caller's org, enforcing separation of duties."""
     approval = await db.scalar(
         sa.select(ApprovalRequest)
         .join(AgentRun)
@@ -612,6 +611,27 @@ async def approve_request(
         raise HTTPException(status_code=404, detail="Approval not found")
     if approval.status != ApprovalStatus.PENDING:
         raise HTTPException(status_code=400, detail="Approval is not pending")
+
+    run = await db.scalar(sa.select(AgentRun).where(AgentRun.id == approval.agent_run_id))
+    if run is not None and run.user_id == current_user.user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Separation of duties: you cannot approve or reject a request you initiated.",
+        )
+    return approval
+
+
+@router.post(
+    "/approvals/{approval_id}/approve",
+    dependencies=[Depends(RequireRole([UserRole.OWNER, UserRole.ADMIN]))],
+)
+async def approve_request(
+    approval_id: uuid.UUID,
+    db: DatabaseDep,
+    current_user: CurrentUserDep,
+    background_tasks: BackgroundTasks,
+) -> Any:
+    approval = await _load_pending_approval_for_org(db, approval_id, current_user)
     approval.status = ApprovalStatus.APPROVED
     approval.actioned_at = datetime.now(UTC)
     approval.actioned_by_id = current_user.user_id
@@ -620,26 +640,17 @@ async def approve_request(
     return {"status": "APPROVED"}
 
 
-@router.post("/approvals/{approval_id}/reject")
+@router.post(
+    "/approvals/{approval_id}/reject",
+    dependencies=[Depends(RequireRole([UserRole.OWNER, UserRole.ADMIN]))],
+)
 async def reject_request(
     approval_id: uuid.UUID,
     db: DatabaseDep,
     current_user: CurrentUserDep,
     background_tasks: BackgroundTasks,
 ) -> Any:
-    approval = await db.scalar(
-        sa.select(ApprovalRequest)
-        .join(AgentRun)
-        .join(Conversation)
-        .where(
-            ApprovalRequest.id == approval_id,
-            Conversation.organization_id == current_user.organization_id,
-        )
-    )
-    if not approval:
-        raise HTTPException(status_code=404, detail="Approval not found")
-    if approval.status != ApprovalStatus.PENDING:
-        raise HTTPException(status_code=400, detail="Approval is not pending")
+    approval = await _load_pending_approval_for_org(db, approval_id, current_user)
     approval.status = ApprovalStatus.DENIED
     approval.actioned_at = datetime.now(UTC)
     approval.actioned_by_id = current_user.user_id
@@ -689,7 +700,7 @@ a {{ display: inline-block; background: #2563eb; color: #fff; padding: 12px 24px
 <div class="card">
   <div class="icon">⚠️</div>
   <h1>Invalid or Expired Approval Link</h1>
-  <p>{e!s}</p>
+  <p>{html.escape(str(e))}</p>
   <a href="{frontend_base}/approvals">Open AURA Platform</a>
 </div>
 </body></html>""",
@@ -733,7 +744,7 @@ a {{ display: inline-block; background: #2563eb; color: #fff; padding: 12px 24px
   <div class="icon">ℹ️</div>
   <div class="badge">Already Actioned: {approval.status.value.upper()}</div>
   <h1>Approval Request Already Processed</h1>
-  <p>Task: <strong>{approval.action_summary}</strong><br>
+  <p>Task: <strong>{html.escape(approval.action_summary)}</strong><br>
   This action was recorded on {approval.actioned_at.strftime("%Y-%m-%d %H:%M:%S UTC") if approval.actioned_at else "earlier"}. No further action is required.</p>
   <a href="{frontend_base}/approvals">View Execution in AURA</a>
 </div>
@@ -743,7 +754,9 @@ a {{ display: inline-block; background: #2563eb; color: #fff; padding: 12px 24px
     # Render authenticated action confirmation form - GET NEVER MUTATES STATE!
     import json
 
-    args_json = json.dumps(approval.action_details, indent=2)
+    args_json = html.escape(
+        json.dumps(approval.action_details, indent=2), quote=False
+    )
 
     return HTMLResponse(
         content=f"""<!DOCTYPE html>
@@ -782,11 +795,11 @@ a {{ display: inline-block; background: #2563eb; color: #fff; padding: 12px 24px
     <div class="detail-box">
       <div class="detail-row">
         <span class="detail-label">Task</span>
-        <span class="detail-val">{approval.action_summary}</span>
+        <span class="detail-val">{html.escape(approval.action_summary)}</span>
       </div>
       <div class="detail-row">
         <span class="detail-label">Target Tool</span>
-        <span class="detail-val">{approval.tool_name}</span>
+        <span class="detail-val">{html.escape(approval.tool_name)}</span>
       </div>
       <div class="detail-row">
         <span class="detail-label">Risk Classification</span>
@@ -804,7 +817,7 @@ a {{ display: inline-block; background: #2563eb; color: #fff; padding: 12px 24px
 
     <!-- POST form: GET requests NEVER mutate execution state! -->
     <form class="actions-form" method="POST" action="{api_base}/approvals/decide">
-      <input type="hidden" name="token" value="{token}">
+      <input type="hidden" name="token" value="{html.escape(token)}">
       <button type="submit" name="decision" value="approve" class="btn btn-approve">
         ✓ Authorize Execution (POST)
       </button>
@@ -955,7 +968,7 @@ async def decide_approval_action(
     <div class="icon">{"✓" if is_approve else "✕"}</div>
     <div class="badge">{status_label}</div>
     <h1>Decision Recorded in Ledger</h1>
-    <p>Your decision for <strong>{approval.action_summary}</strong> has been authenticated and written to AURA's tamper-evident audit ledger.</p>
+    <p>Your decision for <strong>{html.escape(approval.action_summary)}</strong> has been authenticated and written to AURA's tamper-evident audit ledger.</p>
     <a href="{frontend_base}/approvals">Return to AURA Platform →</a>
   </div>
 </body>
@@ -963,12 +976,27 @@ async def decide_approval_action(
     )
 
 
-@router.get("/emails/recent")
-async def list_recent_emails() -> Any:
-    """List recent dispatched approval emails for UI preview and developer verification."""
+_SENSITIVE_DISPATCH_FIELDS = {"approve_url", "deny_url", "html"}
+
+
+@router.get(
+    "/emails/recent",
+    dependencies=[Depends(RequireRole([UserRole.OWNER, UserRole.ADMIN]))],
+)
+async def list_recent_emails(current_user: CurrentUserDep) -> Any:
+    """Admin-only: recent dispatched approval emails, with live tokens/links redacted.
+
+    The underlying outbox exists for UI preview and developer verification. Those
+    approve/deny links let whoever holds them approve or deny the action outright,
+    so they are stripped before this ever leaves the API.
+    """
     from app.services.email_service import EmailNotificationService
 
-    return {"emails": EmailNotificationService.get_recent_emails()}
+    emails = [
+        {k: v for k, v in r.items() if k not in _SENSITIVE_DISPATCH_FIELDS}
+        for r in EmailNotificationService.get_recent_emails()
+    ]
+    return {"emails": emails}
 
 
 @router.post("/approvals/test-email")

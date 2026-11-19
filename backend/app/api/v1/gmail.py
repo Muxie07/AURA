@@ -12,11 +12,11 @@ from typing import Any
 from urllib.parse import quote_plus
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
-from app.api.deps import CurrentUserDep, DatabaseDep
+from app.api.deps import CurrentUserDep, DatabaseDep, RequireRole
 from app.config.settings import get_settings
 from app.database.models import (
     AgentRun,
@@ -24,6 +24,7 @@ from app.database.models import (
     ApprovalRequest,
     ApprovalStatus,
     Conversation,
+    UserRole,
 )
 from app.services.email_service import EmailNotificationService
 from app.services.gmail_service import AuthorizationExpiredError, GmailService
@@ -492,7 +493,23 @@ async def dispatch_approval_email(
     }
 
 
-@router.get("/dispatches")
-async def list_recent_dispatches() -> dict[str, Any]:
-    """Returns recent dispatched approval notifications."""
-    return {"dispatches": EmailNotificationService.get_recent_emails()}
+_SENSITIVE_DISPATCH_FIELDS = {"approve_url", "deny_url", "html"}
+
+
+def _redact_dispatch(record: dict[str, Any]) -> dict[str, Any]:
+    """Strips live approval tokens/links before a dispatch record leaves the API.
+
+    These fields let the holder approve or deny a pending action outright, so they
+    must never appear in a listing response, even to an authenticated admin.
+    """
+    return {k: v for k, v in record.items() if k not in _SENSITIVE_DISPATCH_FIELDS}
+
+
+@router.get("/dispatches", dependencies=[Depends(RequireRole([UserRole.OWNER, UserRole.ADMIN]))])
+async def list_recent_dispatches(current_user: CurrentUserDep) -> dict[str, Any]:
+    """Admin-only: recent dispatched approval notifications, with live tokens/links redacted."""
+    return {
+        "dispatches": [
+            _redact_dispatch(r) for r in EmailNotificationService.get_recent_emails()
+        ]
+    }

@@ -59,3 +59,38 @@ async def rate_limit_dependency(request: Request) -> None:
             detail="Too Many Requests",
             headers={"Retry-After": str(window)},
         )
+
+async def login_rate_limit_dependency(request: Request) -> None:
+    """
+    Sliding-window rate limit dedicated to the login endpoint.
+
+    Brute-forcing credentials is unlimited without this: the general
+    `rate_limit_dependency` only fires on authenticated/AI routes and shares one
+    bucket across every caller behind the same IP. This limiter uses its own,
+    tighter bucket keyed by client IP so a single source can't hammer /auth/token.
+    """
+    settings = get_settings()
+    client = await get_redis_client()
+
+    client_id = request.client.host if request.client else "unknown"
+    key = f"rate_limit:login:{client_id}"
+
+    now = time.time()
+    window = settings.aura_login_rate_limit_window_seconds
+    limit = settings.aura_login_rate_limit_attempts
+
+    async with client.pipeline(transaction=True) as pipe:
+        pipe.zremrangebyscore(key, 0, now - window)
+        pipe.zadd(key, {str(now): now})
+        pipe.zcard(key)
+        pipe.expire(key, window)
+        results = await pipe.execute()
+
+    attempt_count = results[2]
+
+    if attempt_count > limit:
+        raise HTTPException(
+            status_code=HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts. Please wait before trying again.",
+            headers={"Retry-After": str(window)},
+        )

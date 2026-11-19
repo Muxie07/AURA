@@ -317,6 +317,12 @@ class Settings(BaseSettings):
     # =========================================================================
     aura_rate_limit_requests: int = Field(default=100, ge=1)
     aura_rate_limit_window_seconds: int = Field(default=60, ge=1)
+    aura_login_rate_limit_attempts: int = Field(
+        default=5, ge=1, description="Max login attempts per IP within the window."
+    )
+    aura_login_rate_limit_window_seconds: int = Field(
+        default=300, ge=1, description="Login rate-limit window, in seconds."
+    )
 
     # =========================================================================
     # Agent
