@@ -3,6 +3,7 @@ name: Deploy Backend
 # Triggers a Render deploy via the service's Deploy Hook when backend code changes on main.
 # Setup: Render -> aura-backend -> Settings -> Deploy Hook (copy URL), then add it as the
 # GitHub repo secret RENDER_DEPLOY_HOOK_URL. Without the secret this job skips with a warning.
+# The deploy builds whatever is currently at the head of main.
 
 on:
   push:
