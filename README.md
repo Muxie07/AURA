@@ -9,70 +9,80 @@
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ed.svg)](https://www.docker.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**AURA** (Autonomous Unified Reasoning Architecture) is an enterprise-grade, deterministic AI operations platform designed to execute complex business workflows with strict security boundaries, human-in-the-loop (HITL) governance, multi-tenant isolation, and auditable tool execution.
+**AURA** is an AI agent platform for business operations: it plans and executes multi-step workflows (quoting, invoicing, email-based approvals, knowledge retrieval) through a registry of typed tools, with human-in-the-loop approval gating on anything risky.
+
+This is a solo portfolio project, built and since self-audited for correctness and security. The [full audit write-up](https://claude.ai/artifact/3T7DkLpc3sH4y6yUaYSU4o) — architecture map, verified feature inventory, security findings, and a prioritized remediation roadmap — is linked below and in **Known Limitations**. I'm linking it on purpose: it documents what I found wrong with my own code and fixed, and what I knowingly left as debt.
 
 ---
 
-## 🌟 Key Capabilities
+## What's actually real here
+
+A few claims in earlier drafts of this README didn't match the code, so here's the corrected version, stated plainly:
+
+- **The agent runtime is a custom state machine, not LangGraph.** `langgraph` and `langchain-core` were listed as dependencies but never imported anywhere in `app/` — verified with a full-repo grep before writing this. The real orchestrator is `WorkflowGraph` in `app/agents/core/graph.py`: an explicit node/transition graph (Plan → Act → Verify → Re-plan) that I wrote myself. Both unused packages have been dropped from `pyproject.toml`.
+- **There's a deterministic fast path before the LLM gets involved.** For common actions (e.g. `invoice.generate`, `quotation.create_draft`) the planner first tries regex/keyword extraction against the request; only when that can't confidently fill the arguments does it fall back to an LLM call. This cuts cost and latency for routine requests, at the cost of being less flexible than "ask the LLM every time." It's a deliberate tradeoff, not a hidden shortcut — see Known Limitations for the failure mode this used to have.
+- **There's a heuristic (non-LLM) fallback provider.** `HeuristicLLMProvider` is a keyword-matching stand-in that keeps the system answering (in a degraded way) if every configured LLM provider is unreachable or over quota. It's there for resilience, not as the primary "brain."
+
+## Key Capabilities
 
 ### 1. Human-in-the-Loop (HITL) Governance & Risk Tiering
-- **Granular Action Classification:** Tools are categorised by risk level (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`).
-- **Cryptographic Approval Links:** High-risk actions (e.g., executing payments, issuing invoices, emailing external clients) pause execution and trigger one-click cryptographic email approval requests.
-- **Approval Inbox & Audit Trail:** Interactive inbox with real-time SSE streaming for pending approvals, detailed decision rationale, parameter inspection, and immutable audit logs.
+- Tools are classified by risk level (`READ`, `WRITE`, `EXTERNAL_SIDE_EFFECT`).
+- Write/external actions pause execution and generate a cryptographically signed, single-use email approval link (JWT-based, bound to a hash of the specific arguments so the link can't be reused for a different call).
+- An admin-only approvals inbox shows pending requests with full argument inspection; approve/reject enforces separation of duties — the user who triggered an action cannot also approve it.
 
 ### 2. Dual-Channel Email & Gmail Integration
-- **Google OAuth 2.0 Integration:** Secure OAuth flow with automatic token refreshes, encrypted token storage via Fernet symmetric encryption, and multi-tenant credential isolation.
-- **App Password (SMTP) Gateway:** Direct fallback support for corporate SMTP gateways (Gmail, Microsoft 365, internal SMTP relay).
-- **Automated Notifications:** Formatted HTML action proposals with direct secure Approve/Deny endpoints.
+- Google OAuth 2.0 with encrypted token storage (Fernet, tenant-derived key) and per-organization credential isolation.
+- SMTP app-password fallback for providers without OAuth.
+- HTML approval emails with direct approve/deny links.
 
 ### 3. Agent Execution Engine & Real-Time Traceability
-- **Deterministic State Graphs:** Built on LangGraph stateful execution nodes (Plan, Act, Re-plan, Verify).
-- **Live Streamed Execution:** Server-Sent Events (SSE) stream step-by-step agent reasoning, tool execution status, parameters, and live status to the frontend.
-- **Fail-Safe Fallbacks:** Robust error recovery with automatic fallback to heuristic/mock engines if primary LLM quotas or connectivity fail.
+- Custom `WorkflowGraph` state machine (see above) driving Plan/Act/Verify/Re-plan nodes.
+- Server-Sent Events stream step-by-step execution status to the frontend.
+- Falls back to the heuristic provider if configured LLM providers are unreachable.
 
 ### 4. Dynamic Tool Registry, MCP & UTCP
-- **Model Context Protocol (MCP):** Connect to external tool servers via standard JSON-RPC over HTTP or stdio.
-- **Universal Tool Calling Protocol (UTCP):** Dynamic runtime schema translation, parameter type validation, and cryptographic argument binding.
-- **Built-in Business Suite:** Tools for commercial knowledge base retrieval, customer management, quotation calculations, and PDF invoice generation.
+- Model Context Protocol (MCP) client/server for external tool servers over JSON-RPC.
+- A Universal Tool Calling Protocol (UTCP) layer for schema validation and an SSRF guard on outbound tool calls.
+- A small built-in business tool suite: knowledge base retrieval, quotation drafting, PDF invoice generation.
 
-### 5. Multi-Tenant Enterprise Isolation
-- **Row-Level Security:** Strict organization boundaries enforced via UUID foreign keys on all data models.
-- **Tenant Management:** Multi-tenant workspace invitations, role-based access control (`OWNER`, `ADMIN`, `MEMBER`, `VIEWER`), and isolated configurations.
+### 5. Multi-Tenant Isolation
+- Every data model carries an `organization_id` foreign key, and queries are scoped to the caller's org at the application layer.
+- Role-based access control (`OWNER`, `ADMIN`, `MEMBER`, `VIEWER`) enforced via a `RequireRole` FastAPI dependency on sensitive routes.
+- This is **application-level** tenant isolation, not Postgres-native row-level security (no `CREATE POLICY` in the schema). See Known Limitations.
 
 ### 6. Financial Intelligence & Model Evaluation
-- **Budget Guarantees:** Dynamic cost tracking, latency monitoring, and token budgeting per model and tenant.
-- **Benchmarking Suite:** Integrated evaluation engine measuring precision, recall, latency, and cost across custom model runs.
+- Per-tenant token/cost tracking and an evaluation harness for comparing model runs on latency, cost, and basic accuracy.
 
 ---
 
-## 🏗️ Architecture Overview
+## Architecture
 
 ```mermaid
 flowchart TD
     subgraph Client ["Frontend (Next.js 16 + React 19)"]
-        UI[Enterprise Web Dashboard]
-        SSE[SSE Live Execution Monitor]
+        UI[Web Dashboard]
+        SSE[SSE Execution Monitor]
         ApprovalUI[HITL Approval Inbox]
     end
 
-    subgraph Gateway ["API Gateway (FastAPI 0.115)"]
+    subgraph Gateway ["API Gateway (FastAPI)"]
         Auth[JWT / RBAC Middleware]
-        RateLimit[Rate Limiter & Tenant Context]
+        RateLimit[Rate Limiter]
         Router[API v1 Routers]
     end
 
-    subgraph AgentRuntime ["AURA Agent Runtime (LangGraph)"]
-        Planner[Planning & Strategy Engine]
-        Decision[Risk Classifier & Policy Engine]
-        ToolReg[Tool Registry & UTCP Manager]
-        MCPHub[Distributed MCP Hub]
+    subgraph AgentRuntime ["Agent Runtime (custom WorkflowGraph)"]
+        Planner[Planner: deterministic fast-path -> LLM fallback]
+        Decision[Risk Classifier / Policy Engine]
+        ToolReg[Tool Registry + UTCP]
+        MCPHub[MCP Hub]
     end
 
-    subgraph Services ["External & Storage Services"]
+    subgraph Services ["Storage & External Services"]
         PG[(PostgreSQL 16 + pgvector)]
-        RD[(Redis Cache & ARQ Queue)]
-        GMail[Gmail OAuth / SMTP Service]
-        LLM[LLM Providers (OpenAI, Gemini, Claude)]
+        RD[(Redis: cache + ARQ queue)]
+        GMail[Gmail OAuth / SMTP]
+        LLM[LLM Providers: OpenAI, Gemini, Claude]
     end
 
     UI -->|REST / JSON| Gateway
@@ -90,170 +100,130 @@ flowchart TD
 
 ---
 
-## 💻 Tech Stack
+## Tech Stack
 
 | Layer | Technologies |
 | :--- | :--- |
 | **Backend** | Python 3.12, FastAPI, SQLAlchemy 2.0 (async), Alembic, Pydantic v2, ARQ, AsyncPG |
-| **Frontend** | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS, Lucide Icons, jsPDF |
-| **Datastores** | PostgreSQL 16 (with `pgvector` for semantic search), Redis 7.2 |
-| **AI Orchestration** | LangGraph, LangChain, Custom Heuristic Engine, OpenAI, Google Gemini, Anthropic |
-| **Tooling & Standards**| Model Context Protocol (MCP), Universal Tool Calling Protocol (UTCP), OpenAPI 3.1 |
-| **DevOps & QA** | Docker Compose, Pytest, Pytest-Asyncio, Ruff, ESLint |
+| **Frontend** | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS |
+| **Datastores** | PostgreSQL 16 (`pgvector` for semantic search), Redis 7.2 |
+| **Agent runtime** | Custom state machine (`WorkflowGraph`) — no LangGraph/LangChain dependency |
+| **LLM providers** | OpenAI, Google Gemini, Anthropic, plus a keyword-based heuristic fallback |
+| **Tooling & standards** | Model Context Protocol (MCP), Universal Tool Calling Protocol (UTCP), OpenAPI 3.1 |
+| **DevOps & QA** | Docker Compose, Pytest, Pytest-Asyncio, Ruff, ESLint, GitHub Actions |
 
 ---
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```text
 AURA-FINAL/
 ├── backend/
 │   ├── app/
-│   │   ├── agents/          # LangGraph state machine, nodes, and planning engine
-│   │   ├── ai/              # Multi-provider LLM integrations (Google, OpenAI, Heuristic)
+│   │   ├── agents/          # WorkflowGraph state machine, nodes, planning engine
+│   │   ├── ai/              # Multi-provider LLM integrations + heuristic fallback
 │   │   ├── api/             # FastAPI REST endpoints and v1 routes
-│   │   ├── config/          # App settings, environment schema, and seed configurations
-│   │   ├── database/        # SQLAlchemy 2.0 async models and session factories
-│   │   ├── evaluation/      # LLM evaluation engine, cost tracking, and metrics
-│   │   ├── knowledge/       # RAG pipeline, document ingestion, and vector embeddings
-│   │   ├── observability/   # Structured logging, timing middleware, and error handlers
-│   │   ├── security/        # Cryptographic vault and credential encryption
-│   │   ├── services/        # Gmail OAuth, SMTP sending, and email notification services
-│   │   └── tools/           # Dynamic Tool Registry, UTCP engine, and MCP client/server
+│   │   ├── config/          # App settings, environment schema
+│   │   ├── database/        # SQLAlchemy 2.0 async models
+│   │   ├── evaluation/      # Model evaluation engine, cost tracking
+│   │   ├── knowledge/       # RAG pipeline, document ingestion, embeddings
+│   │   ├── observability/   # Structured logging, error handlers
+│   │   ├── security/        # Credential vault (Fernet encryption)
+│   │   └── tools/           # Tool registry, UTCP engine, MCP client/server
 │   ├── migrations/          # Alembic database migrations
-│   ├── scripts/             # Database seed scripts and demo utilities
-│   └── tests/               # Pytest suite (190+ unit and integration tests)
+│   ├── scripts/             # DB seed scripts, demo utilities
+│   └── tests/               # Pytest suite (194 tests at last count)
 ├── frontend/
-│   ├── src/app/
-│   │   ├── agents/          # Agent management and configuration
-│   │   ├── analytics/       # System metrics and usage analytics
-│   │   ├── approvals/       # HITL approval inbox and audit reviews
-│   │   ├── audit/           # Immutable compliance and tool execution logs
-│   │   ├── conversations/   # Real-time chat interface with SSE reasoning stream
-│   │   ├── evaluations/     # Benchmarking runs and model comparisons
-│   │   ├── executions/      # End-to-end execution traceability details
-│   │   ├── knowledge/       # Knowledge base and document management
-│   │   ├── mcp/             # MCP Hub server management
-│   │   ├── models/          # LLM provider configuration and token budget tracking
-│   │   ├── settings/        # System configuration and Gmail OAuth/SMTP management
-│   │   ├── tenants/         # Multi-tenant workspace administration
-│   │   └── workflows/       # Visual workflow DAG builder and executor
-│   └── public/              # Static assets
-├── docker-compose.yml       # Production/staging container orchestration
-├── .env.example             # Complete environment configuration template
-└── README.md                # Platform documentation
+│   └── src/app/             # Dashboard, approvals inbox, conversations, settings, etc.
+├── docker-compose.yml       # Local/dev container orchestration
+├── .env.example             # Environment configuration template
+└── README.md
 ```
 
 ---
 
-## 🚀 Quickstart Guide
+## Quickstart
 
-### 1. Prerequisites
-- **Docker Desktop** (version 24+ recommended)
-- **Node.js** (v20+ LTS)
-- **Python** (v3.12+)
+### Prerequisites
+- Docker Desktop (24+)
+- Node.js (v20+ LTS)
+- Python (3.12+)
 
-### 2. Environment Configuration
-Clone the repository and create your local `.env` file from the provided template:
-
+### 1. Configure environment
 ```bash
 cp .env.example .env
 ```
+Edit `.env` — at minimum set `AURA_SECRET_KEY` and one LLM provider key (`GEMINI_API_KEY` or `OPENAI_API_KEY`).
 
-Edit `.env` to configure your API keys and parameters:
-```dotenv
-# Backend Configuration
-AURA_SECRET_KEY=your-32-char-cryptographic-secret
-DATABASE_URL=postgresql+asyncpg://aura_user:aura_dev_password@localhost:5432/aura_db
-REDIS_URL=redis://localhost:6379/0
-
-# LLM Providers (Configure at least one)
-GEMINI_API_KEY=AIzaSy...
-OPENAI_API_KEY=sk-...
-
-# Google OAuth & Gmail (Optional, for email approvals)
-GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=GOCSPX-...
-GOOGLE_REDIRECT_URI=http://localhost:8000/api/v1/gmail/oauth/callback
-```
-
-### 3. Start with Docker Compose
-Run the entire platform including PostgreSQL (with pgvector), Redis, Backend, and Frontend:
-
+### 2. Run with Docker Compose
 ```bash
-# Build and spin up all containers
 docker compose up -d --build
-
-# Run database migrations
 docker compose exec backend alembic upgrade head
-
-# Seed initial enterprise data (tenants, agents, MCP tools)
 docker compose exec backend python scripts/seed_data.py
 ```
 
-### 4. Running Locally for Development
-
-#### Backend (FastAPI)
+### 3. Or run locally
 ```bash
+# Backend
 cd backend
 python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 alembic upgrade head
 python scripts/seed_data.py
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
+uvicorn app.main:app --reload
 
-#### Frontend (Next.js)
-```bash
+# Frontend (separate shell)
 cd frontend
 npm install
 npm run dev
 ```
 
-The application will be accessible at:
-- **Frontend Dashboard:** [http://localhost:3000](http://localhost:3000)
-- **Interactive OpenAPI Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
-- **Health Check Endpoint:** [http://localhost:8000/api/v1/health](http://localhost:8000/api/v1/health)
+- Frontend: http://localhost:3000
+- API docs: http://localhost:8000/docs
+- Health check: http://localhost:8000/api/v1/health
 
 ---
 
-## 🧪 Testing & Verification
+## Testing & CI
 
-AURA is rigorously tested with over 190 automated tests covering unit logic, database migrations, API contracts, and end-to-end agent workflows.
-
-### Run Backend Test Suite
 ```bash
 cd backend
-pytest -v
-```
-
-### Run Frontend Linting & Build Verification
-```bash
-cd frontend
-npm run lint
-npm run build
-```
-
-### Code Formatting & Quality
-```bash
-# Backend lint and format
-cd backend
-ruff check .
+pytest -v              # 194 tests
 ruff format --check .
+ruff check .            # currently non-blocking in CI — see Known Limitations
+mypy app                # currently non-blocking in CI — see Known Limitations
 ```
 
----
-
-## 🔒 Security & Governance
-
-- **Zero-Trust Tool Execution:** All tools require authorization and argument schema validation via UTCP prior to execution.
-- **Credential Storage:** Secrets, tokens, and OAuth keys are encrypted at rest using AES-128-CBC / Fernet keys.
-- **Audit Logging:** Every state transition, LLM decision, and tool invocation is recorded with structured context variables (`trace_id`, `org_id`, `user_id`).
-- **Secret Scanning Guardrails:** Pre-commit rules and `.gitignore` configurations prevent accidental credential leakage.
+CI (`.github/workflows/ci.yml`) runs format checks and the full test suite as real, blocking gates — a failure fails the build. Lint and type-checking still run on every push but don't block merge yet, for the reason in the next section.
 
 ---
 
-## 📄 License
+## Known Limitations
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Written honestly rather than omitted. Full detail and severity ratings are in the [self-audit](https://claude.ai/artifact/3T7DkLpc3sH4y6yUaYSU4o).
+
+- **Lint/type debt is real and visible, not hidden.** `ruff check` currently reports ~128 pre-existing findings across the codebase (mostly stylistic — `Path.open()` vs `open()`, a few unsafe-to-autofix patterns) and `mypy` hasn't been run to a clean baseline. Both still run on every CI push so the debt doesn't silently grow, but neither blocks a merge yet.
+- **Tenant isolation is application-level, not database-native.** Every table has an `organization_id` and every query path filters on it, but there's no Postgres `ROW LEVEL SECURITY` policy as a second line of defense — a bug in a query's `WHERE` clause is the only thing standing between tenants today.
+- **No SSO.** Auth is JWT + bcrypt only; there's no SAML/OIDC integration.
+- **The "deterministic fast path" used to fabricate data on a miss, and that's been fixed.** Two call sites silently defaulted an unrecognized customer name to a hardcoded "Acme Technologies" instead of asking the LLM or failing. Both now either route to the real LLM-based fallback or raise a validation error — see commit history on this repo for the fix.
+- **A handful of admin endpoints previously faked success** (a "credentials saved" response that never persisted anything; health-check endpoints that always reported healthy regardless of the actual probe result). Fixed to reflect real state — again, visible in commit history rather than claimed here without evidence.
+- **Single-region deployment, no horizontal scaling story yet.** This is a portfolio deployment, not a production SLA.
+
+If you're evaluating this as a hiring signal: the audit linked above and the commit history are the actual evidence. I'd rather you find three disclosed limitations than one undisclosed bug.
+
+---
+
+## Security & Governance
+
+- Tools require risk-level authorization and UTCP schema validation before execution.
+- Secrets/tokens encrypted at rest (Fernet, tenant-derived key).
+- Structured audit logging with `trace_id` / `org_id` / `user_id` context on every tool invocation.
+- Login endpoint has a dedicated, tighter rate limit (separate bucket from the general API limiter) to blunt credential brute-forcing.
+- `.gitignore` covers local scratch scripts, dumps, and credential files so they can't be accidentally committed.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).
