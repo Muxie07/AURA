@@ -174,3 +174,6 @@ backend/security_findings.md
 backend/pytest_error.log
 backend/ruff_all.txt
 backend/ruff_errors.json
+
+# Local-only handoff notes, never for the public repo
+HANDOFF.md
