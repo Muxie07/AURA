@@ -11,6 +11,7 @@ from app.database.base import get_session_factory
 from app.database.models import (
     AgentRun,
     AgentRunStatus,
+    Conversation,
     Customer,
     Organization,
     User, UserRole,
@@ -89,9 +90,9 @@ async def seed_data():
         if not existing_c:
             for i in range(5):
                 c = Customer(
-                    id=uuid.uuid4(), organization_id=org.id, name=f"Customer {i}",
-                    email=f"cust{i}@example.com", status="active",
-                    tier="enterprise", tags=["demo"]
+                    id=f"cust-{uuid.uuid4().hex[:12]}", organization_id=org.id,
+                    code=f"CUST-{i:03d}", name=f"Customer {i}",
+                    email=f"cust{i}@example.com",
                 )
                 db.add(c)
 
@@ -101,9 +102,15 @@ async def seed_data():
             existing_r = (await db.execute(rstmt)).scalars().first()
             if not existing_r:
                 for i in range(15):
+                    convo = Conversation(
+                        id=uuid.uuid4(), organization_id=org.id, user_id=main_user.id,
+                        title=f"Demo conversation {i}",
+                    )
+                    db.add(convo)
+                    await db.flush()
                     run = AgentRun(
                         id=uuid.uuid4(), organization_id=org.id, user_id=main_user.id,
-                        conversation_id=uuid.uuid4(), user_request=f"Request {i}",
+                        conversation_id=convo.id, user_request=f"Request {i}",
                         status=AgentRunStatus.COMPLETED
                     )
                     db.add(run)
