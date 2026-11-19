@@ -615,7 +615,7 @@ class DecisionNode(BaseNode):
                         )
                     )
                 else:
-                    company = "Acme Technologies"
+                    company = None
                     for comp_k, comp_n in [
                         ("acme", "Acme Technologies"),
                         ("global", "Global Telecom Ltd"),
@@ -636,6 +636,13 @@ class DecisionNode(BaseNode):
                         )
                         if comp_match:
                             company = comp_match.group(1).strip()
+
+                    if company is None:
+                        # No recognizable or regex-extracted customer name: don't fabricate
+                        # one. Skipping this step here drops the deterministic-vs-ready-steps
+                        # count mismatch check below, which routes it to the LLM-based
+                        # action-selection path instead of guessing a demo customer.
+                        continue
 
                     model = "UC-2000-VE-4T"
                     for m in [
@@ -717,7 +724,7 @@ class DecisionNode(BaseNode):
                         )
                     )
                 else:
-                    company = "Acme Technologies"
+                    company = None
                     for comp_k, comp_n in [
                         ("acme", "Acme Technologies"),
                         ("global", "Global Telecom Ltd"),
@@ -738,6 +745,13 @@ class DecisionNode(BaseNode):
                         )
                         if comp_match:
                             company = comp_match.group(1).strip()
+
+                    if company is None:
+                        # No recognizable or regex-extracted customer name: don't fabricate
+                        # one. Skipping this step here drops the deterministic-vs-ready-steps
+                        # count mismatch check below, which routes it to the LLM-based
+                        # action-selection path instead of guessing a demo customer.
+                        continue
 
                     model = "UC-2000-VE-4T"
                     for m in [

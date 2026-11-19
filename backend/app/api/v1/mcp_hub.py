@@ -11,10 +11,13 @@ from datetime import UTC, datetime
 from typing import Any
 
 import httpx
+import structlog
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
 from app.api.deps import CurrentUserDep
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/mcp", tags=["MCP Hub"])
 
@@ -102,17 +105,19 @@ async def connect_server(
     servers = _load_servers()
     new_id = f"mcp-{uuid.uuid4().hex[:8]}"
 
-    # Test endpoint reachability with short timeout
+    # Test endpoint reachability with a short timeout. A failed probe is recorded
+    # as UNREACHABLE, not silently upgraded to CONNECTED: a server that doesn't
+    # answer isn't connected, whatever the registration call's own success is.
     t0 = time.time()
-    ping_ms = 25
-    conn_status = "CONNECTED"
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp = await client.get(req.endpoint)
-            ping_ms = max(5, int((time.time() - t0) * 1000))
-    except Exception:
-        # Non-fatal during registration, record as reachable/connected with standard ping
-        ping_ms = 30
+            await client.get(req.endpoint)
+        ping_ms = max(1, int((time.time() - t0) * 1000))
+        conn_status = "CONNECTED"
+    except Exception as e:
+        ping_ms = int((time.time() - t0) * 1000)
+        conn_status = "UNREACHABLE"
+        logger.warning("mcp_hub.connect_probe_failed", endpoint=req.endpoint, error=str(e))
 
     new_server = {
         "id": new_id,
@@ -130,7 +135,7 @@ async def connect_server(
 
     servers.insert(0, new_server)
     _save_servers(servers)
-    return {"status": "CONNECTED", "server": new_server}
+    return {"status": conn_status, "server": new_server}
 
 
 @router.post("/servers/{server_id}/ping", summary="Execute live diagnostic ping to MCP server")
@@ -144,35 +149,40 @@ async def ping_server(server_id: str, current_user: CurrentUserDep) -> dict[str,
     endpoint = server.get("endpoint", "")
 
     t0 = time.time()
-    ping_ms = 18
     is_live = True
-    diag_status = 200
+    diag_status: int | None = None
 
     try:
         async with httpx.AsyncClient(timeout=4.0) as client:
             res = await client.get(endpoint)
-            ping_ms = max(6, int((time.time() - t0) * 1000))
+            ping_ms = max(1, int((time.time() - t0) * 1000))
             diag_status = res.status_code
-    except Exception:
-        ping_ms = 22
+    except Exception as e:
+        ping_ms = int((time.time() - t0) * 1000)
+        is_live = False
+        logger.warning("mcp_hub.ping_failed", server_id=server_id, endpoint=endpoint, error=str(e))
 
     server["last_ping_ms"] = ping_ms
-    server["status"] = "CONNECTED"
+    server["status"] = "CONNECTED" if is_live else "UNREACHABLE"
     servers[idx] = server
     _save_servers(servers)
 
-    raw_diagnostics = (
-        f"Pinging {server['name']} via {server['transport'].upper()} ({endpoint})...\n"
-        f"HTTP/1.1 {diag_status} OK\n"
-        f"JSON-RPC Handshake: Protocol Version 2024-11-05 (MCP Standard)\n"
-        f"Handshake Roundtrip Latency: {ping_ms}ms\n"
-        f"Exposed Capabilities: {', '.join(server.get('scopes', []))}\n"
-        f"Health Status: COMPLIANT & READY"
-    )
+    if is_live:
+        raw_diagnostics = (
+            f"Pinging {server['name']} via {server['transport'].upper()} ({endpoint})...\n"
+            f"HTTP response: {diag_status}\n"
+            f"Roundtrip latency: {ping_ms}ms\n"
+            f"Exposed scopes: {', '.join(server.get('scopes', []))}"
+        )
+    else:
+        raw_diagnostics = (
+            f"Pinging {server['name']} via {server['transport'].upper()} ({endpoint})...\n"
+            f"No response after {ping_ms}ms (connection failed or timed out)."
+        )
 
     return {
         "server_id": server_id,
-        "status": "HEALTHY",
+        "status": "HEALTHY" if is_live else "UNREACHABLE",
         "latency_ms": ping_ms,
         "diagnostics": raw_diagnostics,
     }

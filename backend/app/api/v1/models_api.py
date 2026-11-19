@@ -9,8 +9,9 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.ai.services.llm import LLMService
-from app.api.deps import CurrentUserDep
+import sqlalchemy as sa
+
+from app.api.deps import CurrentUserDep, DatabaseDep
 
 router = APIRouter(prefix="/models", tags=["Models"])
 
@@ -66,35 +67,47 @@ async def list_providers(current_user: CurrentUserDep) -> dict[str, Any]:
 
 @router.post("/{provider_id}/test", summary="Test live connection to model provider")
 async def test_provider_health(provider_id: str, current_user: CurrentUserDep) -> dict[str, Any]:
+    """Actually calls the provider with a 1-token prompt and reports what happened.
+
+    Previously this always called LLMService.generate() with keyword arguments
+    the method doesn't accept, so the call raised on every invocation and the
+    except branch unconditionally reported "HEALTHY" -- a provider that was
+    unreachable, misconfigured, or didn't exist still came back healthy. It
+    now builds a real GenerationRequest against the selected provider and
+    reports FAILED with the real error when the call doesn't succeed.
+    """
     provider = next((p for p in MODEL_PROVIDERS_CONFIG if p["id"] == provider_id), None)
     if not provider:
         raise HTTPException(status_code=404, detail=f"Model provider '{provider_id}' not found.")
 
+    from app.ai.providers.factory import get_llm_provider
+    from app.ai.schemas.generation import GenerationRequest, Message
+
     t0 = time.time()
     try:
-        llm = LLMService()
-        res = await llm.generate(
-            prompt="AURA Provider Health Ping",
-            provider=provider_id if provider_id != "heuristic" else "mock",
+        provider_impl = get_llm_provider(provider_override=provider_id)
+        request = GenerationRequest(
+            messages=[Message(role="user", content="ping")],
             model=provider["models"][0],
             max_tokens=10,
         )
-        latency_ms = max(12, int((time.time() - t0) * 1000))
+        result = await provider_impl.generate(request)
+        latency_ms = max(1, int((time.time() - t0) * 1000))
         return {
             "status": "HEALTHY",
             "provider_id": provider_id,
             "latency_ms": latency_ms,
             "message": f"Successfully verified {provider['name']} response in {latency_ms}ms.",
-            "test_output": res.content[:80] if hasattr(res, "content") else "OK",
+            "test_output": result.text[:80] if result.text else "OK",
         }
-    except Exception:
-        latency_ms = max(15, int((time.time() - t0) * 1000))
+    except Exception as e:
+        latency_ms = max(1, int((time.time() - t0) * 1000))
         return {
-            "status": "HEALTHY",
+            "status": "FAILED",
             "provider_id": provider_id,
             "latency_ms": latency_ms,
-            "message": f"{provider['name']} reachability test completed ({latency_ms}ms).",
-            "test_output": "Provider operational.",
+            "message": f"{provider['name']} health check failed: {e}",
+            "test_output": None,
         }
 
 
@@ -103,15 +116,45 @@ async def update_credentials(
     provider_id: str,
     req: ProviderCredentialRequest,
     current_user: CurrentUserDep,
+    db: DatabaseDep,
 ) -> dict[str, Any]:
+    """Encrypts the API key with the tenant's derived Fernet key and persists it.
+
+    Previously this returned a canned "saved in Vault" message without writing
+    anything anywhere -- the key was discarded as soon as the request ended.
+    """
     provider = next((p for p in MODEL_PROVIDERS_CONFIG if p["id"] == provider_id), None)
     if not provider:
         raise HTTPException(status_code=404, detail=f"Model provider '{provider_id}' not found.")
+
+    from app.database.models import IntegrationCredential
+    from app.security.vault import CredentialVault
+
+    encrypted = CredentialVault.encrypt_secret(req.api_key, current_user.organization_id)
+
+    existing = await db.scalar(
+        sa.select(IntegrationCredential).where(
+            IntegrationCredential.organization_id == current_user.organization_id,
+            IntegrationCredential.name == provider_id,
+        )
+    )
+    if existing:
+        existing.encrypted_payload = encrypted
+    else:
+        db.add(
+            IntegrationCredential(
+                organization_id=current_user.organization_id,
+                name=provider_id,
+                credential_type="llm_api_key",
+                encrypted_payload=encrypted,
+            )
+        )
+    await db.commit()
 
     masked = req.api_key[:4] + "..." + req.api_key[-4:] if len(req.api_key) > 8 else "***"
     return {
         "status": "CONFIGURED",
         "provider_id": provider_id,
         "masked_key": masked,
-        "message": f"Credentials for {provider['name']} securely encrypted and saved in Vault.",
+        "message": f"Credentials for {provider['name']} encrypted and persisted.",
     }

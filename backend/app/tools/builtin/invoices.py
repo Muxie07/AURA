@@ -341,8 +341,17 @@ MOCK_COMPANIES = {
 async def invoice_generate_handler(
     arguments: dict[str, Any], context: ToolContext
 ) -> dict[str, Any]:
-    company_query = arguments.get("company_name", "Acme Technologies").strip()
-    model_query = arguments.get("model_number", "UC-2000-VE-4T").strip()
+    from app.tools.errors import ToolValidationError
+
+    company_query = (arguments.get("company_name") or "").strip()
+    model_query = (arguments.get("model_number") or "").strip()
+    if not company_query:
+        raise ToolValidationError(
+            "invoice.generate requires company_name. A missing customer is never defaulted "
+            "to a demo account."
+        )
+    if not model_query:
+        raise ToolValidationError("invoice.generate requires model_number.")
     qty = max(1, int(arguments.get("quantity", 1)))
     tier = arguments.get("price_tier", "end_customer").lower()
 
