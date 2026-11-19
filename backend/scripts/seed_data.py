@@ -18,8 +18,18 @@ from app.database.models import (
 
 settings = get_settings()
 
-if settings.aura_env.value != "development":
-    print("Refusing to seed in non-development environment.")
+# Seeding is normally restricted to local development so demo/test data can
+# never land in a real tenant's production database by accident. The one
+# deliberate exception: a free-tier demo deployment that has no separate
+# staging environment, which must opt in explicitly and on purpose by
+# setting AURA_ALLOW_SEED=true (not by relaxing AURA_ENV, which would also
+# relax the production secret-strength checks in settings.py).
+if settings.aura_env.value != "development" and os.environ.get("AURA_ALLOW_SEED") != "true":
+    print(
+        "Refusing to seed: AURA_ENV is not 'development' and AURA_ALLOW_SEED is not "
+        "'true'. If this is an intentional one-off demo-data seed against a non-dev "
+        "deployment, set AURA_ALLOW_SEED=true and re-run."
+    )
     sys.exit(1)
 
 def hash_password(password: str) -> str:

@@ -92,6 +92,16 @@ class Settings(BaseSettings):
         default=["http://localhost:3000", "http://localhost:3001"],
         description="Allowed CORS origins.",
     )
+    aura_force_inline_execution: bool = Field(
+        default=False,
+        description=(
+            "Run agent workflows synchronously in the request-handling process instead "
+            "of enqueuing them to the ARQ worker queue. Intended for free-tier demo "
+            "deployments that don't run a separate always-on worker process. Never set "
+            "true for a real multi-tenant deployment: it blocks the request thread for "
+            "the duration of the run and has no retry/backoff semantics."
+        ),
+    )
 
     # =========================================================================
     # API Server
@@ -112,11 +122,27 @@ class Settings(BaseSettings):
     postgres_db: str = Field(default="aura")
     postgres_user: str = Field(default="aura")
     postgres_password: SecretStr = Field(default=SecretStr("aura-dev-password"))
+    postgres_ssl_require: bool = Field(
+        default=False,
+        description=(
+            "Append ?ssl=require to the asyncpg DSN. Needed for managed Postgres "
+            "providers that mandate TLS (e.g. Neon, Supabase) when connecting by "
+            "host/port/user/password instead of a full connection string."
+        ),
+    )
 
     # Connection pool
     aura_db_pool_size: int = Field(default=10, ge=1, description="SQLAlchemy connection pool size.")
     aura_db_max_overflow: int = Field(default=20, ge=0, description="Max overflow connections.")
     aura_db_pool_timeout: int = Field(default=30, ge=1, description="Pool checkout timeout (s).")
+
+    @property
+    def _ssl_query_asyncpg(self) -> str:
+        return "?ssl=require" if self.postgres_ssl_require else ""
+
+    @property
+    def _ssl_query_psycopg2(self) -> str:
+        return "?sslmode=require" if self.postgres_ssl_require else ""
 
     @property
     def database_url(self) -> str:
@@ -134,6 +160,7 @@ class Settings(BaseSettings):
         return (
             f"postgresql+asyncpg://{user}:{pwd}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+            f"{self._ssl_query_asyncpg}"
         )
 
     @property
@@ -143,6 +170,7 @@ class Settings(BaseSettings):
         return (
             f"postgresql+asyncpg://{self.postgres_user}:{pwd}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+            f"{self._ssl_query_asyncpg}"
         )
 
     @property
@@ -152,6 +180,7 @@ class Settings(BaseSettings):
         return (
             f"postgresql+psycopg2://{self.postgres_user}:{pwd}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+            f"{self._ssl_query_psycopg2}"
         )
 
     # =========================================================================
@@ -161,13 +190,21 @@ class Settings(BaseSettings):
     redis_port: int = Field(default=6379, ge=1, le=65535)
     redis_password: SecretStr = Field(default=SecretStr(""))
     redis_db: int = Field(default=0, ge=0)
+    redis_ssl_require: bool = Field(
+        default=False,
+        description=(
+            "Use the rediss:// (TLS) scheme instead of redis://. Needed for managed "
+            "Redis providers that require TLS (e.g. Upstash)."
+        ),
+    )
 
     @property
     def redis_url(self) -> str:
         """Redis connection URL."""
         pwd = self.redis_password.get_secret_value()
         auth = f":{pwd}@" if pwd else ""
-        return f"redis://{auth}{self.redis_host}:{self.redis_port}/{self.redis_db}"
+        scheme = "rediss" if self.redis_ssl_require else "redis"
+        return f"{scheme}://{auth}{self.redis_host}:{self.redis_port}/{self.redis_db}"
 
     # =========================================================================
     # AI — LLM

@@ -301,20 +301,26 @@ async def run_agent_in_background(run_id: uuid.UUID):
     logger = structlog.get_logger(__name__)
     settings = get_settings()
     enqueued = False
-    try:
-        import arq
-
-        redis_pool = await arq.create_pool(
-            arq.connections.RedisSettings.from_dsn(settings.redis_url)
-        )
-        await redis_pool.enqueue_job("run_agent", str(run_id))
-        await redis_pool.close()
-        enqueued = True
-    except Exception as e:
+    if settings.aura_force_inline_execution:
         logger.info(
-            "Background Redis/ARQ queue unavailable; falling back to immediate in-process execution",
-            error=str(e),
+            "aura_force_inline_execution is set; skipping ARQ enqueue, running inline",
+            run_id=str(run_id),
         )
+    else:
+        try:
+            import arq
+
+            redis_pool = await arq.create_pool(
+                arq.connections.RedisSettings.from_dsn(settings.redis_url)
+            )
+            await redis_pool.enqueue_job("run_agent", str(run_id))
+            await redis_pool.close()
+            enqueued = True
+        except Exception as e:
+            logger.info(
+                "Background Redis/ARQ queue unavailable; falling back to immediate in-process execution",
+                error=str(e),
+            )
 
     if not enqueued:
         try:
