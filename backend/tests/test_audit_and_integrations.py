@@ -96,7 +96,30 @@ async def test_tenants_api(client: AsyncClient, organization, user):
 
 
 @pytest.mark.asyncio
-async def test_mcp_hub_api(client: AsyncClient, organization, user):
+async def test_mcp_hub_api(client: AsyncClient, organization, user, monkeypatch):
+    # The ping makes a real HTTP GET to the server's endpoint (default http://localhost:8000/...).
+    # Fake it so the test doesn't depend on a server listening on that port (absent in CI).
+    import types
+
+    import httpx
+
+    class _FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def get(self, url, *args, **kwargs):
+            return httpx.Response(200, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(
+        "app.api.v1.mcp_hub.httpx", types.SimpleNamespace(AsyncClient=_FakeAsyncClient)
+    )
+
     # 1. List servers
     res = await client.get("/api/v1/mcp/servers")
     assert res.status_code == 200
