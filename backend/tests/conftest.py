@@ -79,7 +79,11 @@ async def postgres_engine():
 
 @pytest_asyncio.fixture(scope="session")
 async def create_tables(postgres_engine):
+    from sqlalchemy import text
+
     async with postgres_engine.begin() as conn:
+        # document_chunks has a pgvector column; a fresh database (e.g. CI) lacks the extension.
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     yield
