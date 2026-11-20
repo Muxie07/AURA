@@ -11,32 +11,73 @@ export default function LoginPage() {
   const [email, setEmail] = useState('demo@aura-sre.com');
   const [password, setPassword] = useState('demo1234');
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setStatus(null);
+
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+
+    // The demo backend runs on a free tier that spins the service down when
+    // idle. The first request after that wakes it, but until it is up the host
+    // answers with its own 503 holding page, which carries no CORS headers --
+    // so the browser rejects the cross-origin response and fetch() throws a
+    // bare "Failed to fetch". Both cases mean "not awake yet", not "login
+    // broken", so retry them. Auth failures (401) are never retried.
+    const MAX_ATTEMPTS = 6;
+    const RETRY_DELAY_MS = 5000;
+
     try {
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
-      const res = await fetch(`${API_URL}/auth/token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.detail || `Login failed (${res.status})`);
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        let res: Response;
+
+        try {
+          res = await fetch(`${API_URL}/auth/token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password }),
+          });
+        } catch {
+          if (attempt === MAX_ATTEMPTS) {
+            throw new Error(
+              "Can't reach the server. It may still be starting up -- try again in a moment."
+            );
+          }
+          setStatus(`Waking the server (cold start)... attempt ${attempt} of ${MAX_ATTEMPTS}`);
+          await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+          continue;
+        }
+
+        if (res.status === 502 || res.status === 503 || res.status === 504) {
+          if (attempt === MAX_ATTEMPTS) {
+            throw new Error('Server is still starting up. Please try again in a minute.');
+          }
+          setStatus(`Waking the server (cold start)... attempt ${attempt} of ${MAX_ATTEMPTS}`);
+          await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+          continue;
+        }
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data?.detail || `Login failed (${res.status})`);
+        }
+
+        const data = await res.json();
+        localStorage.setItem('token', data.access_token);
+        localStorage.setItem('user_id', data.user_id);
+        localStorage.setItem('organization_id', data.organization_id);
+        localStorage.setItem('full_name', data.full_name);
+        router.push('/');
+        return;
       }
-      const data = await res.json();
-      localStorage.setItem('token', data.access_token);
-      localStorage.setItem('user_id', data.user_id);
-      localStorage.setItem('organization_id', data.organization_id);
-      localStorage.setItem('full_name', data.full_name);
-      router.push('/');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
+      setStatus(null);
       setLoading(false);
     }
   }
@@ -68,6 +109,12 @@ export default function LoginPage() {
           {error && (
             <div className="mb-5 p-3 bg-destructive/10 border border-destructive/20 rounded-xl text-xs text-destructive font-medium">
               {error}
+            </div>
+          )}
+
+          {status && !error && (
+            <div className="mb-5 p-3 bg-muted/40 border border-border rounded-xl text-xs text-muted-foreground font-medium">
+              {status}
             </div>
           )}
 
