@@ -72,7 +72,7 @@ jobs:
         working-directory: backend
       - name: Run Pytest
         env:
-          AURA_ENV: testing
+          AURA_ENV: development
           AURA_SECRET_KEY: test-secret-key-at-least-32-characters-long
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
