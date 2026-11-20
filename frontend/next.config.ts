@@ -1,12 +1,22 @@
 import type { NextConfig } from "next";
 
+// Origin of the backend API (e.g. https://api.example.com), allowed in connect-src.
+// Without this the browser blocks every call to a deployed backend ("Failed to fetch").
+const apiOrigin = (() => {
+  try {
+    return process.env.NEXT_PUBLIC_API_URL ? new URL(process.env.NEXT_PUBLIC_API_URL).origin : '';
+  } catch {
+    return '';
+  }
+})();
+
 const cspHeader = `
     default-src 'self';
     script-src 'self' 'unsafe-eval' 'unsafe-inline';
     style-src 'self' 'unsafe-inline';
     img-src 'self' blob: data:;
     font-src 'self';
-    connect-src 'self' http://localhost:8000 ws://localhost:8000 http://127.0.0.1:8000 ws://127.0.0.1:8000;
+    connect-src 'self' ${apiOrigin} http://localhost:8000 ws://localhost:8000 http://127.0.0.1:8000 ws://127.0.0.1:8000;
     object-src 'none';
     base-uri 'self';
     form-action 'self';
