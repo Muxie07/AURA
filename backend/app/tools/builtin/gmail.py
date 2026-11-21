@@ -18,28 +18,24 @@ async def gmail_send_approval_handler(
     containing cryptographic one-click Approve and Reject buttons.
     """
     cfg = GmailService.get_config(context.organization_id)
+    # The approver is configuration, never a model-chosen value: letting the
+    # model pick the recipient would make this an arbitrary-email tool.
     recipient = (
-        arguments.get("recipient")
-        or cfg.get("recipient_email")
+        os.environ.get("AURA_APPROVAL_EMAIL")
         or os.environ.get("GMAIL_RECIPIENT_EMAIL")
-        or os.environ.get("AURA_APPROVAL_EMAIL")
+        or cfg.get("recipient_email")
     )
     if not recipient:
-        raise ValueError("No recipient email specified for approval notification.")
+        raise ValueError("No approver email configured (set AURA_APPROVAL_EMAIL).")
 
-    action_summary = (
-        arguments.get("action_summary") or "Commercial Quotation Sign-Off: Cloud Infotech Partner"
-    )
-    reason = (
-        arguments.get("reason") or "Commercial discount of 25% exceeds the authorized 20% limit."
-    )
-    details = arguments.get("details") or {
-        "company_name": "Cloud Infotech Partner",
-        "model_number": "UC-2000-VE-8T",
-        "quantity": 2,
-        "discount_percent": 25.0,
-        "total_authorized": "₹1,11,732",
-    }
+    details = arguments.get("details")
+    action_summary = arguments.get("action_summary")
+    if not details or not action_summary:
+        raise ValueError(
+            "gmail.send_approval_request needs 'action_summary' and 'details' describing the "
+            "real pending action; AURA will not invent them."
+        )
+    reason = arguments.get("reason") or "Human approval required by policy."
 
     session_factory = get_session_factory()
     async with session_factory() as db:
@@ -96,7 +92,8 @@ gmail_send_approval_def = ToolDefinition(
         },
         "required": [],
     },
-    risk_level=RiskLevel.EXTERNAL_SIDE_EFFECT,
+    # Notifies only the configured approver, so it must not itself wait for approval.
+    risk_level=RiskLevel.WRITE,
     idempotent=False,
 )
 

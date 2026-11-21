@@ -87,12 +87,12 @@ export interface OAuthStatus {
 }
 
 interface GmailStatus {
-  overall_status?: 'fully_connected' | 'oauth_only' | 'smtp_only' | 'disconnected';
+  overall_status?: 'fully_connected' | 'oauth_only' | 'smtp_only' | 'resend_only' | 'disconnected';
   overall_label?: string;
   overall_description?: string;
   can_send_email?: boolean;
   can_use_gmail_api?: boolean;
-  active_sending_method?: 'gmail_api' | 'smtp' | 'none';
+  active_sending_method?: 'resend' | 'gmail_api' | 'smtp' | 'none';
   smtp?: SmtpStatus;
   oauth?: OAuthStatus;
   status: ConnectionStatusType;
@@ -471,7 +471,7 @@ export default function SettingsPage() {
       } else {
         setGmailMessage({ 
           type: 'error', 
-          text: data.detail || data.error || 'Test email delivery failed. Verify permissions or reconnect Gmail.' 
+          text: data.detail || data.error?.message || (typeof data.error === 'string' ? data.error : '') || 'Test email delivery failed. Verify permissions or reconnect Gmail.' 
         });
       }
     } catch (e: any) {
@@ -504,6 +504,13 @@ export default function SettingsPage() {
           <span className="px-2.5 py-1 text-[11px] font-semibold rounded-full font-mono bg-chart-1/15 text-chart-1 border border-chart-1/30 flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-chart-1 animate-pulse" />
             Connected (Gmail API)
+          </span>
+        );
+      case 'resend_only':
+        return (
+          <span className="px-2.5 py-1 text-[11px] font-semibold rounded-full font-mono bg-success/15 text-success border border-success/30 flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+            Email Active (Resend)
           </span>
         );
       case 'smtp_only':
@@ -748,7 +755,7 @@ export default function SettingsPage() {
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Target Recipient:</span>
                   <span className="font-mono text-foreground font-medium truncate max-w-[180px]">
-                    {gmailStatus.smtp?.recipient_email || gmailStatus.recipient_email || 'mufeed.career@gmail.com'}
+                    {gmailStatus.smtp?.recipient_email || gmailStatus.recipient_email || 'Not configured'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -838,7 +845,7 @@ export default function SettingsPage() {
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Google Client ID:</span>
                   <span className="font-mono text-foreground font-medium text-[10px] truncate max-w-[180px]">
-                    {gmailStatus.oauth?.client_id_preview || (gmailStatus.oauth_configured ? '869968176287...apps.googleusercontent.com' : 'Not configured')}
+                    {gmailStatus.oauth?.client_id_preview || 'Not configured'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -1020,7 +1027,7 @@ export default function SettingsPage() {
             <span>Send Live Diagnostic Test Email</span>
           </h4>
           <p className="text-[11px] text-muted-foreground mb-3">
-            Dispatches a verified health check email through the active transport ({gmailStatus.active_sending_method === 'gmail_api' ? 'Gmail REST API' : 'Gmail SMTP'}) to confirm end-to-end delivery to your inbox.
+            Dispatches a verified health check email through the active transport ({gmailStatus.active_sending_method === 'resend' ? 'Resend' : gmailStatus.active_sending_method === 'gmail_api' ? 'Gmail REST API' : 'Gmail SMTP'}) to confirm end-to-end delivery to your inbox.
           </p>
           <div className="flex gap-2">
             <input

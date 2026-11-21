@@ -6,8 +6,6 @@ Gmail REST API sending, delivery diagnostics, and email approval notification en
 
 import os
 import smtplib
-import uuid
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote_plus
@@ -17,14 +15,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
-from app.api.deps import CurrentUserDep, DatabaseDep, RequireRole
+from app.api.deps import CurrentUserDep, RequireRole
 from app.config.settings import get_settings
 from app.database.models import (
-    AgentRun,
-    AgentRunStatus,
-    ApprovalRequest,
-    ApprovalStatus,
-    Conversation,
     UserRole,
 )
 from app.services.email_service import EmailNotificationService
@@ -58,18 +51,6 @@ class GmailOAuthCredentialsRequest(BaseModel):
     client_id: str
     client_secret: str
     redirect_uri: str | None = None
-
-
-class GmailApprovalDispatchRequest(BaseModel):
-    recipient_email: str | None = None
-    tool_name: str = "quotation.create_draft"
-    action_summary: str = "Sign-off 25% Commercial Discount on Cloud Infotech Order"
-    company_name: str = "Cloud Infotech Partner"
-    model_number: str = "UC-2000-VE-8T (8 Port GSM/VoLTE Gateway)"
-    quantity: int = 2
-    discount_percent: float = 25.0
-    total_amount: str = "₹1,11,732 (excl. 18% GST)"
-    reason: str = "Commercial discount of 25.0% exceeds authorized 20% limit."
 
 
 # =============================================================================
@@ -391,109 +372,6 @@ async def configure_gmail_smtp(
 # =============================================================================
 # Approval Notification Dispatcher
 # =============================================================================
-@router.post("/send-approval")
-async def dispatch_approval_email(
-    req: GmailApprovalDispatchRequest,
-    current_user: CurrentUserDep,
-    db: DatabaseDep,
-) -> dict[str, Any]:
-    """
-    Creates a persistent human approval request and dispatches a notification email
-    with cryptographically signed decision URLs that link back to AURA.
-    """
-    cfg = await GmailService.get_tenant_config(current_user.organization_id)
-    target_recipient = (
-        str(req.recipient_email)
-        if req.recipient_email
-        else (cfg.get("recipient_email") or current_user.email)
-    )
-
-    if not target_recipient:
-        raise HTTPException(
-            status_code=400,
-            detail="No recipient email address specified. Configure your recipient email in Gmail settings.",
-        )
-
-    # 1. Create or load Conversation
-    import sqlalchemy as sa
-
-    conv = await db.scalar(
-        sa.select(Conversation)
-        .where(Conversation.organization_id == current_user.organization_id)
-        .limit(1)
-    )
-    if not conv:
-        conv = Conversation(
-            organization_id=current_user.organization_id,
-            user_id=getattr(current_user, "user_id", None),
-            title="Commercial Quotation Sign-Off Thread",
-        )
-        db.add(conv)
-        await db.flush()
-
-    # 2. Create AgentRun
-    run = AgentRun(
-        organization_id=current_user.organization_id,
-        conversation_id=conv.id,
-        user_id=getattr(current_user, "user_id", None),
-        user_request=f"Commercial quotation draft for {req.company_name} ({req.discount_percent}% discount)",
-        status=AgentRunStatus.PENDING,
-    )
-    db.add(run)
-    await db.flush()
-
-    # 3. Create frozen payload snapshot
-    details_payload = {
-        "company_name": req.company_name,
-        "model_number": req.model_number,
-        "quantity": req.quantity,
-        "discount_percent": req.discount_percent,
-        "total_authorized": req.total_amount,
-        "_reason": req.reason,
-    }
-
-    approval = ApprovalRequest(
-        agent_run_id=run.id,
-        organization_id=current_user.organization_id,
-        tool_name=req.tool_name,
-        action_summary=req.action_summary,
-        action_details=details_payload,
-        args_hash="gmail_" + uuid.uuid4().hex[:12],
-        status=ApprovalStatus.PENDING,
-        expires_at=datetime.now(UTC) + timedelta(hours=24),
-    )
-    db.add(approval)
-    await db.commit()
-    await db.refresh(approval)
-
-    # 4. Dispatch Email with signed HMAC tokens
-    email_result = await GmailService.dispatch_approval_request(
-        approval_id=approval.id,
-        tool_name=req.tool_name,
-        action_summary=req.action_summary,
-        action_details=details_payload,
-        reason=req.reason,
-        recipient_email=target_recipient,
-        agent_run_id=run.id,
-        organization_id=current_user.organization_id,
-    )
-
-    return {
-        "status": "DISPATCHED",
-        "approval_id": str(approval.id),
-        "recipient": target_recipient,
-        "subject": email_result.get("subject"),
-        "approve_url": email_result.get("approve_url"),
-        "deny_url": email_result.get("deny_url"),
-        "smtp_delivered": email_result.get("smtp_delivered", False),
-        "delivery_provider": email_result.get("delivery_provider", "Gmail REST API"),
-        "notice": (
-            f"Approval notification dispatched to {target_recipient}. "
-            "When the approver opens the link, AURA displays the frozen action snapshot for authorization."
-        ),
-    }
-
-
 _SENSITIVE_DISPATCH_FIELDS = {"approve_url", "deny_url", "html"}
 
 

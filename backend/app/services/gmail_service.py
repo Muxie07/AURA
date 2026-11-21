@@ -957,7 +957,23 @@ class GmailService:
         smtp_status = await cls.get_smtp_status(organization_id)
         oauth_status = await cls.get_oauth_status(organization_id)
 
-        if smtp_status["configured"] and oauth_status["connected"]:
+        resend_key = bool(os.environ.get("RESEND_API_KEY"))
+        approver = os.environ.get("AURA_APPROVAL_EMAIL") or os.environ.get("GMAIL_RECIPIENT_EMAIL")
+        resend_status = {
+            "configured": resend_key,
+            "from": os.environ.get("RESEND_FROM", "AURA Approvals <onboarding@resend.dev>"),
+            "recipient_email": approver,
+        }
+
+        if resend_key and not (smtp_status["configured"] or oauth_status["connected"]):
+            overall_status = "resend_only"
+            overall_label = "Email Active (Resend)"
+            overall_desc = "Approval emails are delivered over Resend's HTTPS API" + (
+                f" to {approver}."
+                if approver
+                else ". Set AURA_APPROVAL_EMAIL to choose the approver."
+            )
+        elif smtp_status["configured"] and oauth_status["connected"]:
             overall_status = "fully_connected"
             overall_label = "Email Active (SMTP + Google OAuth)"
             overall_desc = (
@@ -976,12 +992,16 @@ class GmailService:
             overall_label = "Not Connected"
             overall_desc = "No email delivery method configured. Connect with Google OAuth 2.0 or set up an App Password (SMTP)."
 
-        can_send_email = bool(smtp_status["configured"] or oauth_status["connected"])
+        can_send_email = bool(smtp_status["configured"] or oauth_status["connected"] or resend_key)
         can_use_gmail_api = bool(oauth_status["connected"])
         active_method = (
-            "gmail_api"
-            if oauth_status["connected"]
-            else ("smtp" if smtp_status["configured"] else "none")
+            "resend"
+            if resend_key
+            else (
+                "gmail_api"
+                if oauth_status["connected"]
+                else ("smtp" if smtp_status["configured"] else "none")
+            )
         )
 
         return {
@@ -993,6 +1013,7 @@ class GmailService:
             "active_sending_method": active_method,
             "smtp": smtp_status,
             "oauth": oauth_status,
+            "resend": resend_status,
             # Backwards-compatibility fields for legacy callers
             "integration": "gmail",
             "smtp_host": smtp_status.get("host", "smtp.gmail.com"),
@@ -1215,6 +1236,35 @@ class GmailService:
         client: httpx.AsyncClient | None = None,
     ) -> dict[str, Any]:
         org_str = str(organization_id) if organization_id else "org-default"
+
+        if os.environ.get("RESEND_API_KEY"):
+            from app.services.email_service import EmailNotificationService
+
+            now_txt = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+            try:
+                message_id = await EmailNotificationService._send_via_resend(
+                    recipient,
+                    "[AURA Test] Email delivery verification",
+                    f"<p>This is a test email from AURA, sent over Resend at {now_txt}.</p>"
+                    "<p>If you can read this, approval emails can reach you.</p>",
+                    f"This is a test email from AURA, sent over Resend at {now_txt}.",
+                )
+                return {
+                    "delivered": True,
+                    "status": "DELIVERED",
+                    "provider": "Resend",
+                    "message_id": message_id,
+                    "recipient": recipient,
+                }
+            except Exception as e:  # surface Resend's real answer, never a generic one
+                return {
+                    "delivered": False,
+                    "status": "FAILED",
+                    "provider": "Resend",
+                    "recipient": recipient,
+                    "error": f"Resend rejected the email: {e}",
+                }
+
         oauth_status = await cls.get_oauth_status(organization_id)
         smtp_status = await cls.get_smtp_status(organization_id)
 
