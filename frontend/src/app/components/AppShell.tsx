@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Sidebar from './Sidebar';
 import Topnav from './Topnav';
-import RightPanel from './RightPanel';
 
 const PUBLIC_PATHS = ['/login'];
 
@@ -14,8 +13,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const isPublic = PUBLIC_PATHS.includes(pathname);
   const [checked, setChecked] = useState(false);
   const isConversationsPage = pathname === '/conversations';
-  // Default right panel to closed on /conversations to give chat maximum breathing room, open on other pages
-  const [rightPanelOpen, setRightPanelOpen] = useState(!isConversationsPage);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -25,13 +22,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       setChecked(true);
     }
   }, [pathname, isPublic, router]);
-
-  // Keep right panel closed when switching to conversations, but respect user toggles
-  useEffect(() => {
-    if (pathname === '/conversations') {
-      setRightPanelOpen(false);
-    }
-  }, [pathname]);
 
   // Login page — no shell, render children directly
   if (isPublic) {
@@ -59,10 +49,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Main Content Area */}
       <div className="flex flex-col flex-1 min-w-0 h-full overflow-hidden">
-        <Topnav
-          rightPanelOpen={rightPanelOpen}
-          onToggleRightPanel={() => setRightPanelOpen(!rightPanelOpen)}
-        />
+        <Topnav />
         <main
           className={`flex-1 min-h-0 bg-background overflow-y-auto ${
             isConversationsPage ? 'p-2 sm:p-4' : 'p-6 lg:p-8'
@@ -73,12 +60,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </main>
       </div>
-
-      {/* Right Operational Panel */}
-      <RightPanel
-        isOpen={rightPanelOpen}
-        onToggle={() => setRightPanelOpen(!rightPanelOpen)}
-      />
     </div>
   );
 }

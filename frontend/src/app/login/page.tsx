@@ -101,9 +101,6 @@ export default function LoginPage() {
         >
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-base font-bold text-foreground">Sign in to console</h2>
-            <span className="px-2 py-0.5 text-[10px] font-semibold bg-success/15 text-success rounded-full border border-success/20">
-              v2.4 Live
-            </span>
           </div>
 
           {error && (

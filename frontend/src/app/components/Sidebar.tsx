@@ -2,29 +2,25 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { cn } from '../lib/utils';
 import { fetchApi, logout } from '../lib/api';
 import {
   LayoutDashboard,
   Bot,
-  Sliders,
   GitFork,
   BookOpen,
   Boxes,
   Wrench,
   CheckCircle2,
   PlaySquare,
-  BarChart3,
   ScrollText,
   Settings,
   MessagesSquare,
   Mail,
-  Search,
   Moon,
   Sun,
   Zap,
-  Users2,
   LogOut,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -37,43 +33,33 @@ interface NavItem {
   badgeColor?: 'red' | 'yellow' | 'green';
 }
 
-const quickAccessItems: NavItem[] = [
-  { name: 'Live Agent Chat', href: '/conversations', icon: MessagesSquare },
-  { name: 'Pending Approvals', href: '/approvals', icon: CheckCircle2, badgeColor: 'red' },
+const buildItems: NavItem[] = [
+  { name: 'Studio', href: '/agents', icon: Bot },
+  { name: 'Workflows', href: '/workflows', icon: GitFork },
+  { name: 'Knowledge', href: '/knowledge', icon: BookOpen },
+  { name: 'Tools', href: '/tools', icon: Wrench },
+  { name: 'MCP Servers', href: '/mcp', icon: Boxes },
 ];
 
-const platformItems: NavItem[] = [
+const runItems: NavItem[] = [
   { name: 'Overview', href: '/', icon: LayoutDashboard },
-  { name: 'Agents', href: '/agents', icon: Bot, badge: '5' },
-  { name: 'Agent Studio', href: '/studio/agent', icon: Sliders },
-  { name: 'Workflow Studio', href: '/workflows', icon: GitFork },
-  { name: 'Knowledge Bases', href: '/knowledge', icon: BookOpen },
+  { name: 'Chat', href: '/conversations', icon: MessagesSquare },
+  { name: 'Approvals', href: '/approvals', icon: CheckCircle2, badgeColor: 'red' },
+  { name: 'Logs', href: '/executions', icon: PlaySquare },
 ];
 
-const operationsItems: NavItem[] = [
-  { name: 'Executions', href: '/executions', icon: PlaySquare },
-  { name: 'Approvals', href: '/approvals', icon: CheckCircle2 },
-  { name: 'Tool Registry', href: '/tools', icon: Wrench },
-  { name: 'MCP Servers', href: '/mcp', icon: Boxes, badge: '3', badgeColor: 'green' },
-  { name: 'Agent Performance', href: '/analytics', icon: BarChart3 },
-  { name: 'Audit & Error Logs', href: '/audit', icon: ScrollText },
-];
-
-const adminItems: NavItem[] = [
+const workspaceItems: NavItem[] = [
   { name: 'Integrations', href: '/settings#integrations', icon: Mail },
+  { name: 'Audit Log', href: '/audit', icon: ScrollText },
   { name: 'Settings', href: '/settings', icon: Settings },
-  { name: 'Team & Tenants', href: '/tenants', icon: Users2 },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const router = useRouter();
   const [userName, setUserName] = useState<string>('Enterprise Operator');
   const [userRole, setUserRole] = useState<string>('AI Operations Lead');
   const [userInitials, setUserInitials] = useState<string>('EO');
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(0);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchOpen, setSearchOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
 
   useEffect(() => {
@@ -118,24 +104,6 @@ export default function Sidebar() {
     }
   };
 
-  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      if (q.includes('gmail') || q.includes('mail') || q.includes('integrat')) router.push('/settings#integrations');
-      else if (q.includes('agent')) router.push('/agents');
-      else if (q.includes('approv')) router.push('/approvals');
-      else if (q.includes('flow') || q.includes('work')) router.push('/workflows');
-      else if (q.includes('know') || q.includes('doc')) router.push('/knowledge');
-      else if (q.includes('exec') || q.includes('run')) router.push('/executions');
-      else if (q.includes('tool')) router.push('/tools');
-      else if (q.includes('mcp')) router.push('/mcp');
-      else if (q.includes('analy') || q.includes('perf')) router.push('/analytics');
-      else if (q.includes('aud') || q.includes('log')) router.push('/audit');
-      else if (q.includes('set')) router.push('/settings');
-      else router.push(`/conversations?q=${encodeURIComponent(searchQuery)}`);
-    }
-  };
-
   return (
     <aside className="w-[260px] h-screen bg-card border-r border-border flex flex-col shrink-0 select-none z-20">
       {/* Brand Header */}
@@ -151,98 +119,29 @@ export default function Sidebar() {
             <span className="text-[10px] text-muted-foreground font-mono block">Enterprise AI</span>
           </div>
         </Link>
-        <span className="ml-auto px-2 py-0.5 text-[10px] font-medium bg-success/15 text-success rounded-full border border-success/20">
-          v2.4 Live
-        </span>
-      </div>
-
-      {/* Global Search Bar */}
-      <div className="px-4 py-3 shrink-0">
-        <div className="relative">
-          <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            type="text"
-            placeholder="Search platform..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={handleSearchKeyDown}
-            className="w-full pl-9 pr-8 py-2 rounded-xl bg-muted/60 hover:bg-muted text-xs text-foreground placeholder:text-muted-foreground border border-transparent focus:border-border focus:bg-background focus:outline-none transition-all"
-          />
-          <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground bg-background px-1.5 py-0.5 rounded border border-border font-mono pointer-events-none">
-            /
-          </kbd>
-        </div>
       </div>
 
       {/* Navigation Links Scroll Area */}
-      <div className="flex-1 overflow-y-auto px-3 py-1 space-y-4">
-        {/* Quick Access */}
-        <div>
-          <p className="px-3 mb-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-            Quick Access
-          </p>
-          <nav className="space-y-0.5">
-            {quickAccessItems.map((item) => {
-              const isActive = pathname === item.href;
-              const badge = item.name === 'Pending Approvals' && pendingApprovalsCount > 0 ? pendingApprovalsCount : item.badge;
-              return (
-                <NavButton
-                  key={`quick-${item.href}`}
-                  item={{ ...item, badge }}
-                  isActive={isActive}
-                />
-              );
-            })}
-          </nav>
-        </div>
-
-        {/* Platform */}
-        <div>
-          <p className="px-3 mb-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-            Platform
-          </p>
-          <nav className="space-y-0.5">
-            {platformItems.map((item) => (
-              <NavButton
-                key={item.href}
-                item={item}
-                isActive={pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href))}
-              />
-            ))}
-          </nav>
-        </div>
-
-        {/* Operations */}
-        <div>
-          <p className="px-3 mb-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-            Operations
-          </p>
-          <nav className="space-y-0.5">
-            {operationsItems.map((item) => (
-              <NavButton
-                key={item.href}
-                item={item}
-                isActive={pathname === item.href || pathname.startsWith(item.href)}
-              />
-            ))}
-          </nav>
-        </div>
-
-        {/* Administration */}
-        <div>
-          <p className="px-3 mb-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-            Administration
-          </p>
-          <nav className="space-y-0.5">
-            {adminItems.map((item) => (
-              <NavButton
-                key={item.href}
-                item={item}
-                isActive={pathname === item.href}
-              />
-            ))}
-          </nav>
-        </div>
+      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
+        {[
+          { label: 'Build', items: buildItems },
+          { label: 'Run', items: runItems },
+          { label: 'Workspace', items: workspaceItems },
+        ].map((section) => (
+          <div key={section.label}>
+            <p className="px-3 mb-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+              {section.label}
+            </p>
+            <nav className="space-y-0.5">
+              {section.items.map((item) => {
+                const base = item.href.split('#')[0];
+                const isActive = base === '/' ? pathname === '/' : pathname === base || pathname.startsWith(base + '/');
+                const badge = item.name === 'Approvals' && pendingApprovalsCount > 0 ? pendingApprovalsCount : undefined;
+                return <NavButton key={item.href} item={{ ...item, badge }} isActive={isActive} />;
+              })}
+            </nav>
+          </div>
+        ))}
       </div>
 
       {/* User Footer with Theme Toggle and Logout */}
