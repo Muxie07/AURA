@@ -1082,7 +1082,7 @@ function InvoiceCard({ data }: InvoiceCardProps) {
               </p>
               <div className="pt-1">
                 <span className="inline-block bg-emerald-50 text-emerald-700 border border-emerald-300 font-bold text-[11px] px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-                  {data.status || 'APPROVED & OFFICIAL'}
+                  {data.status || 'ISSUED'}
                 </span>
               </div>
             </div>
@@ -1167,6 +1167,18 @@ function InvoiceCard({ data }: InvoiceCardProps) {
           </div>
 
           <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2 text-xs">
+            {Number(data.discount_amount) > 0 && (
+              <>
+                <div className="flex justify-between text-slate-600">
+                  <span>List price:</span>
+                  <span className="font-medium text-slate-800">₹{formatInr(data.list_subtotal || 0)}</span>
+                </div>
+                <div className="flex justify-between text-slate-600">
+                  <span>Discount ({data.discount_percent}%):</span>
+                  <span className="font-medium text-rose-600">−₹{formatInr(data.discount_amount)}</span>
+                </div>
+              </>
+            )}
             <div className="flex justify-between text-slate-600">
               <span>Subtotal (Taxable Value):</span>
               <span className="font-semibold text-slate-900">₹{formatInr(subtotal)}</span>

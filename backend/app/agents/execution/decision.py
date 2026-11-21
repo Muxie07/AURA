@@ -615,6 +615,10 @@ class DecisionNode(BaseNode):
             if step.type == "invoice.generate":
                 req_text = state.original_request or ""
                 req_lower = req_text.lower()
+                _inv_discount = extract_discount_percent(req_text)
+                _inv_discount_args = (
+                    {"discount_percent": _inv_discount} if _inv_discount is not None else {}
+                )
                 match = re.search(
                     r"for\s+(.*?)\s+for\s+(\d+)\s+units\s+of\s+(.*?)\s+at\s+([a-zA-Z0-9_]+)\s+tier",
                     req_text,
@@ -632,6 +636,7 @@ class DecisionNode(BaseNode):
                                 "model_number": model.strip(),
                                 "quantity": int(qty),
                                 "price_tier": tier.strip().lower(),
+                                **_inv_discount_args,
                             },
                             status="PENDING",
                         )
@@ -716,6 +721,7 @@ class DecisionNode(BaseNode):
                                 "model_number": model,
                                 "quantity": qty,
                                 "price_tier": tier,
+                                **_inv_discount_args,
                             },
                             status="PENDING",
                         )

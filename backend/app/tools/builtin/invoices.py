@@ -398,7 +398,15 @@ async def invoice_generate_handler(
         unit_price = matched_product["mrp"]
         tier_label = "MRP"
 
-    subtotal = float(Decimal(str(unit_price)) * Decimal(str(qty)))
+    list_subtotal = float(Decimal(str(unit_price)) * Decimal(str(qty)))
+    try:
+        discount_pct = float(arguments.get("discount_percent") or 0.0)
+    except (TypeError, ValueError):
+        raise ToolValidationError("discount_percent must be a number.")
+    if not 0.0 <= discount_pct <= 100.0:
+        raise ToolValidationError("discount_percent must be between 0 and 100.")
+    discount_amount = round(list_subtotal * discount_pct / 100.0, 2)
+    subtotal = round(list_subtotal - discount_amount, 2)  # taxable value after discount
     gst_18 = round(subtotal * 0.18, 2)
     grand_total = round(subtotal + gst_18, 2)
 
@@ -440,6 +448,9 @@ async def invoice_generate_handler(
                 "total": subtotal,
             }
         ],
+        "list_subtotal": list_subtotal,
+        "discount_percent": discount_pct,
+        "discount_amount": discount_amount,
         "subtotal": subtotal,
         "cgst_9_percent": round(gst_18 / 2, 2),
         "sgst_9_percent": round(gst_18 / 2, 2),
@@ -455,7 +466,7 @@ async def invoice_generate_handler(
             "24*7 Technical support & emergency SLA response.",
             "Payment strictly within 30 days of invoice date.",
         ],
-        "status": "APPROVED",
+        "status": "ISSUED",
     }
     save_generated_invoice(invoice_data)
     return invoice_data
@@ -477,6 +488,11 @@ invoice_generate_def = ToolDefinition(
                 "type": "string",
                 "enum": ["end_customer", "retail", "msp", "mrp"],
                 "default": "end_customer",
+            },
+            "discount_percent": {
+                "type": "number",
+                "description": "Discount on the list price, 0-100. Above 20% requires human approval.",
+                "default": 0,
             },
         },
         "required": ["company_name", "model_number"],
