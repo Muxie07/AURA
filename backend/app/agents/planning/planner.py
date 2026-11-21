@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Any
 
 import structlog
@@ -15,6 +16,24 @@ from app.agents.planning.schemas import StructuredAgentPlan
 from app.ai.routing.router import ModelRouter, TaskProfile
 from app.ai.schemas.generation import GenerationRequest, Message
 from app.ai.services.llm import LLMService
+
+_ACTION_VERB_RE = re.compile(r"\b(generate|create|prepare|draft|issue|raise|make|send|apply)\b")
+_ACTION_SPECIFICS_RE = re.compile(
+    r"\bunits?\s+of\b|\bquantity\b|\bdiscount\b|\d+(?:\.\d+)?\s*(?:%|percent)"
+)
+
+
+def _is_action_request(text: str) -> bool:
+    """True for "generate/create ... N units / discount ..." style requests.
+
+    Such a request must go to the real planner and policy engine. The lookup
+    shortcuts below match on loose keywords ("customer" appears inside the
+    price tier "end_customer"), and must never answer an action with a stored
+    record from a previous run.
+    """
+    t = (text or "").lower()
+    return bool(_ACTION_VERB_RE.search(t) and _ACTION_SPECIFICS_RE.search(t))
+
 
 logger = structlog.get_logger(__name__)
 
@@ -105,36 +124,40 @@ class UnderstandNode(BaseNode):
         ]
         if any(t in req_lower for t in quotation_triggers):
             # Check if user wants to retrieve / show / search / query date of an existing quotation
-            is_show_quote = any(
-                w in req_lower
-                for w in [
-                    "show",
-                    "get",
-                    "fetch",
-                    "find",
-                    "view",
-                    "display",
-                    "check",
-                    "current",
-                    "recent",
-                    "last",
-                    "latest",
-                    "where is",
-                    "look up",
-                    "see",
-                    "when",
-                    "date",
-                    "what date",
-                    "which date",
-                    "tell me",
-                    "details",
-                    "status",
-                    "history",
-                    "search",
-                    "time",
-                    "created",
-                ]
-            ) and not any(w in req_lower for w in ["create new", "generate new", "draft new"])
+            is_show_quote = (
+                any(
+                    w in req_lower
+                    for w in [
+                        "show",
+                        "get",
+                        "fetch",
+                        "find",
+                        "view",
+                        "display",
+                        "check",
+                        "current",
+                        "recent",
+                        "last",
+                        "latest",
+                        "where is",
+                        "look up",
+                        "see",
+                        "when",
+                        "date",
+                        "what date",
+                        "which date",
+                        "tell me",
+                        "details",
+                        "status",
+                        "history",
+                        "search",
+                        "time",
+                        "created",
+                    ]
+                )
+                and not any(w in req_lower for w in ["create new", "generate new", "draft new"])
+                and not _is_action_request(req_lower)
+            )
             if is_show_quote:
                 from app.tools.builtin.quotations import find_stored_quotation
 
@@ -206,36 +229,40 @@ class UnderstandNode(BaseNode):
         ]
         if any(t in req_lower for t in invoice_triggers):
             # Check if user wants to retrieve / show / search / query date of an existing invoice
-            is_show_invoice = any(
-                w in req_lower
-                for w in [
-                    "show",
-                    "get",
-                    "fetch",
-                    "find",
-                    "view",
-                    "display",
-                    "check",
-                    "current",
-                    "recent",
-                    "last",
-                    "latest",
-                    "where is",
-                    "look up",
-                    "see",
-                    "when",
-                    "date",
-                    "what date",
-                    "which date",
-                    "tell me",
-                    "details",
-                    "status",
-                    "history",
-                    "search",
-                    "time",
-                    "created",
-                ]
-            ) and not any(w in req_lower for w in ["create new", "generate new"])
+            is_show_invoice = (
+                any(
+                    w in req_lower
+                    for w in [
+                        "show",
+                        "get",
+                        "fetch",
+                        "find",
+                        "view",
+                        "display",
+                        "check",
+                        "current",
+                        "recent",
+                        "last",
+                        "latest",
+                        "where is",
+                        "look up",
+                        "see",
+                        "when",
+                        "date",
+                        "what date",
+                        "which date",
+                        "tell me",
+                        "details",
+                        "status",
+                        "history",
+                        "search",
+                        "time",
+                        "created",
+                    ]
+                )
+                and not any(w in req_lower for w in ["create new", "generate new"])
+                and not _is_action_request(req_lower)
+            )
             if is_show_invoice:
                 from app.tools.builtin.invoices import find_stored_invoice
 
@@ -316,8 +343,10 @@ class UnderstandNode(BaseNode):
             "client",
             "customer",
         ]
-        if any(t in req_lower for t in client_memory_triggers) and not any(
-            w in req_lower for w in ["python", "code", "script"]
+        if (
+            any(re.search(rf"\b{re.escape(t)}\b", req_lower) for t in client_memory_triggers)
+            and not _is_action_request(req_lower)
+            and not any(w in req_lower for w in ["python", "code", "script"])
         ):
             from app.tools.builtin.invoices import find_stored_invoice
 
