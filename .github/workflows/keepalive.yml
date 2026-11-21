@@ -1,0 +1,29 @@
+name: Keep demo backend awake
+
+# The demo backend runs on a free plan that spins the service down after ~15
+# minutes of inactivity. A cold start takes 30-50s, during which the host
+# serves its own 503 page and the demo looks broken to anyone opening the link.
+# This pings the health endpoint often enough to keep the instance warm during
+# the hours a visitor is likely to click through.
+on:
+  schedule:
+    - cron: '*/12 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health endpoint
+        run: |
+          for attempt in 1 2 3; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 \
+              https://aura-backend-z1qs.onrender.com/api/v1/health || echo 000)
+            echo "attempt $attempt: HTTP $code"
+            if [ "$code" = "200" ]; then
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "Backend did not return 200 after 3 attempts."
+          exit 1
