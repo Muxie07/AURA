@@ -8,6 +8,7 @@ Provides:
 
 from __future__ import annotations
 
+import os
 import time
 from datetime import UTC, datetime
 from typing import Literal
@@ -40,6 +41,7 @@ class HealthResponse(BaseModel):
     timestamp: datetime
     version: str
     environment: str
+    commit: str | None = None
     components: dict[str, ComponentHealth]
 
 
@@ -93,6 +95,8 @@ async def health_check(
         timestamp=datetime.now(UTC),
         version="0.1.0",
         environment=settings.aura_env.value,
+        # Render sets RENDER_GIT_COMMIT; lets you verify which build is live.
+        commit=os.environ.get("RENDER_GIT_COMMIT") or os.environ.get("GIT_COMMIT"),
         components=components,
     )
 
