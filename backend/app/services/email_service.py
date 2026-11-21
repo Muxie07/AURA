@@ -93,6 +93,22 @@ class EmailNotificationService:
     # Phase 3: Comprehensive 14-Section Gmail Approval Notification Email
     # =========================================================================
 
+    @staticmethod
+    async def _send_via_resend(to: str, subject: str, html: str, text: str) -> str:
+        """Send through Resend's HTTPS API and return the provider message id."""
+        import httpx
+
+        sender = os.environ.get("RESEND_FROM", "AURA Approvals <onboarding@resend.dev>")
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(
+                "https://api.resend.com/emails",
+                headers={"Authorization": f"Bearer {os.environ['RESEND_API_KEY']}"},
+                json={"from": sender, "to": [to], "subject": subject, "html": html, "text": text},
+            )
+        if resp.status_code >= 300:
+            raise RuntimeError(f"Resend returned {resp.status_code}: {resp.text[:300]}")
+        return str(resp.json().get("id", ""))
+
     @classmethod
     async def send_approval_request_email(
         cls,
@@ -118,53 +134,50 @@ class EmailNotificationService:
         company_name = (
             action_details.get("company_name")
             or action_details.get("customer_name")
-            or "Cloud Infotech Partner"
+            or "Not specified"
         )
         request_id_str = str(approval_id)
-        what_aura_wants_to_do = (
-            action_details.get("business_objective")
-            or f"Transmit authorized commercial quotation to {company_name} via external communications gateway."
-        )
+        what_aura_wants_to_do = action_details.get("business_objective") or action_summary
         why_necessary = (
             action_details.get("why_necessary")
             or reason
-            or "Action involves an external side-effect and commercial discount exceeding auto-approval limits."
+            or f"'{tool_name}' is classified as requiring human approval before it runs."
         )
-        evidence = action_details.get("supporting_evidence") or {
-            "customer_account": company_name,
-            "commercial_policy": "Enterprise Master Rate Card & Pricing Matrix",
-            "discount_requested": f"{action_details.get('discount_percent', 25.0)}%",
-            "catalog_item": action_details.get("model_number", "UC-2000-VE-8T"),
-        }
+        evidence = action_details.get("supporting_evidence") or action_details
         evidence_formatted = (
-            json.dumps(evidence, indent=2) if isinstance(evidence, dict) else str(evidence)
-        )
-        data_affected = (
-            action_details.get("data_affected")
-            or "Commercial quotation database, external customer communications log, transaction audit ledger."
-        )
+            json.dumps(evidence, indent=2, default=str)
+            if isinstance(evidence, dict)
+            else str(evidence)
+        )[:2000]
+        data_affected = action_details.get("data_affected") or "Not specified by the agent."
         target_destination = (
             recipient_email
             or action_details.get("recipient")
             or action_details.get("target_recipient")
             or os.environ.get("GMAIL_RECIPIENT_EMAIL")
             or os.environ.get("AURA_APPROVAL_EMAIL")
-            or "procurement@cloudinfotech.com"
         )
-        financial_impact = (
-            action_details.get("financial_impact")
-            or f"Quotation Total: ${action_details.get('total', '18,750.00')} (Applied Discount: {action_details.get('discount_percent', '25.0')}%)"
-        )
-        expected_result = (
-            action_details.get("expected_result")
-            or f"Official quotation #{action_details.get('quotation_id', 'QT-2026-0042')} transmitted to {company_name}; sales pipeline updated."
+        # With no approver address configured nothing can be delivered; say so
+        # instead of inventing a recipient.
+        configured_recipient = target_destination or None
+        target_destination = configured_recipient or "(no approver email configured)"
+        if action_details.get("financial_impact"):
+            financial_impact = action_details["financial_impact"]
+        elif action_details.get("total") is not None:
+            financial_impact = f"Total: ${action_details['total']}"
+            if action_details.get("discount_percent") is not None:
+                financial_impact += f" (discount {action_details['discount_percent']}%)"
+        else:
+            financial_impact = "Not specified by the agent."
+        expected_result = action_details.get("expected_result") or (
+            f"The run resumes and executes '{tool_name}': {action_summary}"
         )
         risks_and_uncertainties = (
             action_details.get("risks_and_uncertainties")
-            or "Irreversible external customer commitment upon transmission; binding price guarantee for 30 days."
+            or "Not specified by the agent. Review the action details above before approving."
         )
-        if_approved = "AURA will immediately resume the paused execution graph, dispatch the quotation via the verified communications gateway, and log delivery receipts."
-        if_rejected = "Execution will be cancelled safely. No external messages or quotation records will be dispatched. A cancellation notice will be recorded in the audit trail."
+        if_approved = f"AURA resumes the paused run and executes '{tool_name}' with the arguments shown, then records the outcome in the audit trail."
+        if_rejected = "The run is cancelled. The action is not executed, and the rejection is recorded in the audit trail."
         expiration_text = "24 hours from dispatch (Single-use Cryptographic Nonce Token)"
 
         # Generate cryptographic tokens with single-use nonce
@@ -353,8 +366,8 @@ OPEN AURA DASHBOARD:
             "html": html_body,
             "text": text_body,
             "timestamp": datetime.now(UTC).isoformat(),
-            "status": "SENT",
-            "delivery_provider": "AURA Secure Outbox",
+            "status": "PENDING",
+            "delivery_provider": "none",
         }
 
         # Store in recent outbox buffer
@@ -370,6 +383,29 @@ OPEN AURA DASHBOARD:
             approve_url=approve_url,
         )
 
+        if not configured_recipient:
+            record["status"] = "NOT_SENT"
+            record["delivery_error"] = "No approver email configured (set AURA_APPROVAL_EMAIL)."
+            return record
+
+        # 0. Resend (HTTPS API). Preferred: free hosts block outbound SMTP ports,
+        #    and this needs one API key instead of a Google OAuth consent flow.
+        if os.environ.get("RESEND_API_KEY"):
+            try:
+                message_id = await cls._send_via_resend(
+                    configured_recipient, subject, html_body, text_body
+                )
+                record["status"] = "DELIVERED"
+                record["delivery_provider"] = "Resend"
+                record["provider_message_id"] = message_id
+                return record
+            except Exception as resend_err:
+                logger.warning("resend_dispatch_failed", error=str(resend_err))
+                record["status"] = "FAILED"
+                record["delivery_provider"] = "Resend"
+                record["delivery_error"] = str(resend_err)
+                return record
+
         # 1. Attempt official Gmail REST API dispatch if organization is configured
         if organization_id:
             try:
@@ -383,6 +419,7 @@ OPEN AURA DASHBOARD:
                     body_html=html_body,
                 )
                 record["gmail_api_delivered"] = True
+                record["status"] = "DELIVERED"
                 record["delivery_provider"] = (
                     "Gmail REST API (https://www.googleapis.com/auth/gmail.send)"
                 )
@@ -431,6 +468,7 @@ OPEN AURA DASHBOARD:
                     server.sendmail(smtp_user, [target_destination], msg.as_string())
 
                 record["smtp_delivered"] = True
+                record["status"] = "DELIVERED"
                 record["delivery_provider"] = "Gmail SMTP (smtp.gmail.com)"
                 logger.info(
                     "email_delivered_via_gmail_smtp", recipient=target_destination, sender=smtp_user
@@ -441,9 +479,14 @@ OPEN AURA DASHBOARD:
                 )
                 record["smtp_delivered"] = False
                 record["smtp_error"] = str(e)
+                record["status"] = "FAILED"
+                record["delivery_error"] = str(e)
         else:
             record["smtp_delivered"] = False
-            record["smtp_notice"] = "Staged in AURA outbox for instant verification."
+            record["status"] = "NOT_SENT"
+            record["delivery_error"] = (
+                "No email provider configured (set RESEND_API_KEY, or connect Gmail/SMTP)."
+            )
 
         return record
 
