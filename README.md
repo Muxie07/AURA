@@ -13,6 +13,25 @@
 
 This is a solo portfolio project, built and since self-audited for correctness and security. The [full audit write-up](https://claude.ai/artifact/3T7DkLpc3sH4y6yUaYSU4o) — architecture map, verified feature inventory, security findings, and a prioritized remediation roadmap — is linked below and in **Known Limitations**. I'm linking it on purpose: it documents what I found wrong with my own code and fixed, and what I knowingly left as debt.
 
+## Try it in 60 seconds
+
+**Live demo:** https://aura-frontend-teal.vercel.app (free hosting: the first request can take about 40 seconds while the backend wakes up). Demo login on request.
+
+1. Open **Chat** and send: `Create a quotation for Acme Technologies for 10 units of UC-2000-VE-4T at end_customer tier with 25% discount`
+2. AURA pauses the run: a discount above 20% needs a human. The request appears under **Approvals** and an email is sent to the approver.
+3. Open the email on a phone and tap **Approve**. A confirm page opens (a deliberate second step, because mail scanners prefetch links), and the paused run continues.
+4. Open **Executions** to see the step-by-step trace, and **Audit Log** for the record of who decided what.
+
+A request with no discount (or 20% or less) runs straight through; nothing is gated that does not need to be.
+
+## Why this is more than a chatbot with tools
+
+- **Policy before side effects.** Every tool call is checked first: read and write tools run if the user has permission, external actions always need approval, and so does any discount over 20%.
+- **Approvals that cannot be replayed.** An approval is bound to a hash of the exact tool arguments, so a link for one action cannot authorise a different one. Email links are signed, single-use JWTs.
+- **Separation of duties.** The person who started a run cannot approve it.
+- **Real delivery, honestly reported.** Approval email goes out over Resend; if it is not delivered, the approval records the failure instead of claiming success.
+- **Tested on the flows that matter.** 240+ backend tests, including approve and reject through the real endpoints, tenant isolation, SSRF guards and regression tests for every bug found while building it.
+
 ---
 
 ## What's actually real here

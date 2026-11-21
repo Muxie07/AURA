@@ -177,3 +177,10 @@ backend/ruff_errors.json
 
 # Local-only handoff notes, never for the public repo
 HANDOFF.md
+
+# Local scratch scripts and dumps in the repository root (not part of the product)
+/*.py
+/*.js
+/*.txt
+/*.json
+/Claude outputs/
