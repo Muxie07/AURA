@@ -12,6 +12,28 @@ from app.ai.services.llm import LLMService
 
 logger = structlog.get_logger(__name__)
 
+
+_DISCOUNT_RE = re.compile(
+    r"(\d+(?:\.\d+)?)\s*(?:%|percent)\s*(?:discount|off)"
+    r"|discount\s*(?:of|:|=|at)?\s*(\d+(?:\.\d+)?)\s*(?:%|percent)?",
+    re.IGNORECASE,
+)
+
+
+def extract_discount_percent(text: str) -> float | None:
+    """Return the discount the user asked for ("25% discount", "discount of 30"), else None.
+
+    The deterministic quotation path builds tool arguments from the request text.
+    If it ignores a stated discount, the quotation is created at full price and
+    the policy engine never sees the figure that should trigger human approval.
+    """
+    m = _DISCOUNT_RE.search(text or "")
+    if not m:
+        return None
+    value = float(m.group(1) or m.group(2))
+    return value if 0 < value <= 100 else None
+
+
 INVOICE_SELECTOR_PAYLOAD = """<!-- INVOICE_SELECTOR_START -->
 {
   "companies": [
@@ -702,6 +724,12 @@ class DecisionNode(BaseNode):
             elif step.type == "quotation.create_draft":
                 req_text = state.original_request or ""
                 req_lower = req_text.lower()
+                _requested_discount = extract_discount_percent(req_text)
+                _discount_args = (
+                    {"discount_percent": _requested_discount}
+                    if _requested_discount is not None
+                    else {}
+                )
                 match = re.search(
                     r"for\s+(.*?)\s+for\s+(\d+)\s+units\s+of\s+(.*?)\s+at\s+([a-zA-Z0-9_]+)\s+tier",
                     req_text,
@@ -719,6 +747,7 @@ class DecisionNode(BaseNode):
                                 "model_number": model.strip(),
                                 "quantity": int(qty),
                                 "price_tier": tier.strip().lower(),
+                                **_discount_args,
                             },
                             status="PENDING",
                         )
@@ -803,6 +832,7 @@ class DecisionNode(BaseNode):
                                 "model_number": model,
                                 "quantity": qty,
                                 "price_tier": tier,
+                                **_discount_args,
                             },
                             status="PENDING",
                         )
