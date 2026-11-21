@@ -126,3 +126,25 @@ def test_token_roundtrip_and_decision_binding():
     tok = EmailNotificationService.generate_token(aid, "approve")
     claims = EmailNotificationService.verify_token(tok)
     assert claims["approval_id"] == str(aid) and claims["decision"] == "approve"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("customer", ["Acme Technologies", "procurement@customer.example"])
+async def test_approval_goes_to_approver_not_customer(monkeypatch, customer):
+    """Regression: the customer named in the action must never be the delivery address."""
+    monkeypatch.setenv("RESEND_API_KEY", "re_test")
+    monkeypatch.setenv("AURA_APPROVAL_EMAIL", "mufeed.career@gmail.com")
+    sent = {}
+
+    async def fake_post(self, url, headers=None, json=None, **_):
+        sent.update(body=json)
+        return httpx.Response(200, json={"id": "m1"}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+    details = {**DETAILS, "target_recipient": customer, "recipient": customer}
+
+    rec = await _send(details=details, recipient_email=None)
+
+    assert rec["status"] == "DELIVERED"
+    assert sent["body"]["to"] == ["mufeed.career@gmail.com"]
+    assert customer in rec["html"]  # still shown as the action's recipient

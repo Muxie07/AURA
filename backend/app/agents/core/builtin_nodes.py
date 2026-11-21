@@ -257,16 +257,31 @@ class ExecutionNode(BaseNode):
                     try:
                         from app.services.email_service import EmailNotificationService
 
-                        await EmailNotificationService.send_approval_request_email(
+                        email_record = await EmailNotificationService.send_approval_request_email(
                             approval_id=approval.id,
                             tool_name=action.action_type,
                             action_summary=action_summary_text,
                             action_details=structured_details,
                             reason=e.reason,
-                            recipient_email=recipient_email or None,
+                            recipient_email=None,  # approver comes from AURA_APPROVAL_EMAIL, not the customer
                             agent_run_id=state.run_id,
                             organization_id=state.organization_id,
                         )
+                        approval.action_details = {
+                            **approval.action_details,
+                            "email_delivery": {
+                                "status": email_record.get("status"),
+                                "provider": email_record.get("delivery_provider"),
+                                "error": email_record.get("delivery_error"),
+                            },
+                        }
+                        if email_record.get("status") != "DELIVERED":
+                            logger.error(
+                                "approval_email_not_delivered",
+                                approval_id=str(approval.id),
+                                status=email_record.get("status"),
+                                error=email_record.get("delivery_error"),
+                            )
                     except Exception as email_err:
                         logger.warning("failed_to_dispatch_approval_email", error=str(email_err))
                 return

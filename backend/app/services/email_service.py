@@ -150,17 +150,20 @@ class EmailNotificationService:
             else str(evidence)
         )[:2000]
         data_affected = action_details.get("data_affected") or "Not specified by the agent."
-        target_destination = (
+        # Delivery address = the human approver (explicit argument, else env).
+        # The customer/recipient named in the action is only *shown* in the
+        # body ("exact recipient"); it must never be where the approval goes.
+        configured_recipient = (
             recipient_email
-            or action_details.get("recipient")
-            or action_details.get("target_recipient")
-            or os.environ.get("GMAIL_RECIPIENT_EMAIL")
             or os.environ.get("AURA_APPROVAL_EMAIL")
+            or os.environ.get("GMAIL_RECIPIENT_EMAIL")
+            or None
         )
-        # With no approver address configured nothing can be delivered; say so
-        # instead of inventing a recipient.
-        configured_recipient = target_destination or None
-        target_destination = configured_recipient or "(no approver email configured)"
+        target_destination = (
+            action_details.get("target_recipient")
+            or action_details.get("recipient")
+            or "Not specified by the agent."
+        )
         if action_details.get("financial_impact"):
             financial_impact = action_details["financial_impact"]
         elif action_details.get("total") is not None:
@@ -356,7 +359,7 @@ OPEN AURA DASHBOARD:
         record = {
             "id": str(uuid.uuid4()),
             "approval_id": request_id_str,
-            "recipient": target_destination,
+            "recipient": configured_recipient or "(no approver email configured)",
             "subject": subject,
             "tool_name": tool_name,
             "company_name": company_name,
@@ -378,7 +381,7 @@ OPEN AURA DASHBOARD:
         logger.info(
             "approval_notification_email_dispatched",
             approval_id=request_id_str,
-            recipient=target_destination,
+            recipient=configured_recipient,
             tool=tool_name,
             approve_url=approve_url,
         )
@@ -413,7 +416,7 @@ OPEN AURA DASHBOARD:
 
                 await GmailService.send_gmail_api_message(
                     organization_id=organization_id,
-                    recipient=target_destination,
+                    recipient=configured_recipient,
                     subject=subject,
                     body_text=text_body,
                     body_html=html_body,
@@ -457,7 +460,7 @@ OPEN AURA DASHBOARD:
                 msg = MIMEMultipart("alternative")
                 msg["Subject"] = subject
                 msg["From"] = f"AURA Enterprise Platform <{smtp_user}>"
-                msg["To"] = target_destination
+                msg["To"] = configured_recipient
 
                 msg.attach(MIMEText(text_body, "plain"))
                 msg.attach(MIMEText(html_body, "html"))
@@ -465,17 +468,19 @@ OPEN AURA DASHBOARD:
                 with smtplib.SMTP(smtp_host, smtp_port, timeout=8) as server:
                     server.starttls()
                     server.login(smtp_user, smtp_pass)
-                    server.sendmail(smtp_user, [target_destination], msg.as_string())
+                    server.sendmail(smtp_user, [configured_recipient], msg.as_string())
 
                 record["smtp_delivered"] = True
                 record["status"] = "DELIVERED"
                 record["delivery_provider"] = "Gmail SMTP (smtp.gmail.com)"
                 logger.info(
-                    "email_delivered_via_gmail_smtp", recipient=target_destination, sender=smtp_user
+                    "email_delivered_via_gmail_smtp",
+                    recipient=configured_recipient,
+                    sender=smtp_user,
                 )
             except Exception as e:
                 logger.warning(
-                    "gmail_smtp_dispatch_failed", error=str(e), recipient=target_destination
+                    "gmail_smtp_dispatch_failed", error=str(e), recipient=configured_recipient
                 )
                 record["smtp_delivered"] = False
                 record["smtp_error"] = str(e)

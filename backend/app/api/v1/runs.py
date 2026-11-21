@@ -1047,7 +1047,7 @@ async def trigger_test_approval_email(
         action_summary=action_summary,
         action_details=approval.action_details,
         reason=policy_reason,
-        recipient_email=current_user.email,
+        recipient_email=None,  # approver address comes from AURA_APPROVAL_EMAIL
         agent_run_id=mock_run_id,
     )
 
