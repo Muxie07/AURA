@@ -2,7 +2,7 @@ import asyncio
 import html
 import json
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import sqlalchemy as sa

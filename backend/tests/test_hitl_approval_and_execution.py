@@ -210,6 +210,19 @@ async def test_action_request_structure_and_immutable_hash(db_session: AsyncSess
 # Test 2: Phase 3 Comprehensive 14-Section Gmail Approval Notification Email
 # =============================================================================
 
+@pytest.fixture
+def stub_email_provider(monkeypatch):
+    """Configure a provider so delivery is reported honestly; no network call is made."""
+    from app.services.email_service import EmailNotificationService as _Svc
+
+    async def _fake_send(to, subject, html, text):
+        return "test-message-id"
+
+    monkeypatch.setenv("RESEND_API_KEY", "test-key")
+    monkeypatch.setattr(_Svc, "_send_via_resend", staticmethod(_fake_send))
+
+
+@pytest.mark.usefixtures("stub_email_provider")
 @pytest.mark.asyncio
 async def test_gmail_approval_email_14_sections():
     """
@@ -243,7 +256,7 @@ async def test_gmail_approval_email_14_sections():
         recipient_email="approver@cloudinfotech.internal",
     )
 
-    assert email_record["status"] == "SENT"
+    assert email_record["status"] == "DELIVERED"
     html = email_record["html"]
     text = email_record["text"]
 
@@ -597,6 +610,7 @@ async def test_tampered_action_parameters_require_fresh_approval(db_session: Asy
 # Test 8: Full End-to-End Demonstration Lifecycle (Phases 1-8)
 # =============================================================================
 
+@pytest.mark.usefixtures("stub_email_provider")
 @pytest.mark.asyncio
 async def test_full_approval_and_execution_lifecycle(db_session: AsyncSession, seed_data: dict):
     """
@@ -704,7 +718,7 @@ async def test_full_approval_and_execution_lifecycle(db_session: AsyncSession, s
         action_details=approval.action_details,
         recipient_email="approver@cloudinfotech.internal",
     )
-    assert email_res["status"] == "SENT"
+    assert email_res["status"] == "DELIVERED"
 
     # 5. Approver authorizes via POST
     token = EmailNotificationService.generate_token(approval.id, "approve")

@@ -8,6 +8,7 @@ import os
 import smtplib
 import uuid
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote_plus
 

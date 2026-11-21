@@ -15,14 +15,11 @@ async def customer_search_handler(
     async with get_session_factory()() as db:
         stmt = sa.select(Customer).where(Customer.organization_id == context.organization_id)
         if query:
+            escaped_query = query.replace("%", r"\%").replace("_", r"\_")
             stmt = stmt.where(
                 sa.or_(
-                    sa.func.lower(Customer.name).like(
-                        f"%{query.replace('%', r'\%').replace('_', r'\_')}%", escape="\\"
-                    ),
-                    sa.func.lower(Customer.email).like(
-                        f"%{query.replace('%', r'\%').replace('_', r'\_')}%", escape="\\"
-                    ),
+                    sa.func.lower(Customer.name).like(f"%{escaped_query}%", escape="\\"),
+                    sa.func.lower(Customer.email).like(f"%{escaped_query}%", escape="\\"),
                 )
             )
         result = await db.execute(stmt)
