@@ -37,6 +37,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -80,7 +81,7 @@ jobs:
           POSTGRES_USER: aura
           POSTGRES_PASSWORD: aura-dev-password
           REDIS_URL: redis://localhost:6379/0
-        run: pytest --cov=app --cov-report=xml
+        run: pytest -vv --durations=20 -o faulthandler_timeout=120 --cov=app --cov-report=xml
         working-directory: backend
       - name: Upload coverage
         uses: codecov/codecov-action@v4
